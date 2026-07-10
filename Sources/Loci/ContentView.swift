@@ -1760,7 +1760,7 @@ private extension View {
     func sidebarSectionLabel() -> some View {
         self
             .font(LociFont.label)
-            .foregroundStyle(LociColor.inkFaint)
+            .foregroundStyle(LociColor.inkSecondary)
             .padding(.bottom, 6)
             .padding(.leading, 20)
     }
