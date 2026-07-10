@@ -8,6 +8,7 @@ enum DocumentViewerContent: Equatable {
     case image(URL)
     case quickLook(URL)
     case plainText(String)
+    case markdown(String)
     case websitePreview(thumbnailURL: URL?, websiteURL: URL?)
     case preparing(String)
     case unsupported(String)
@@ -85,6 +86,9 @@ enum DocumentViewerContentResolver {
            !DocumentPreviewConverter.isOfficeDocument(originalURL),
            let text = try? String(contentsOf: originalURL, encoding: .utf8),
            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if ext == "md" || ext == "markdown" {
+                return Result(content: .markdown(text), pdfPageCount: 0)
+            }
             return Result(content: .plainText(text), pdfPageCount: 0)
         }
 

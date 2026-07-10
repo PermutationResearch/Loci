@@ -24,6 +24,7 @@ struct LociScrollFeel: NSViewRepresentable {
 final class ScrollFeelProbeView: NSView {
     var profile: LociScrollFeel.Profile = .library
     private weak var configuredScrollView: NSScrollView?
+    private var retriesRemaining = 0
 
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
@@ -40,14 +41,24 @@ final class ScrollFeelProbeView: NSView {
     }
 
     func scheduleConfiguration() {
+        retriesRemaining = 40
         DispatchQueue.main.async { [weak self] in
             self?.configureScrollView()
         }
     }
 
     private func configureScrollView() {
+        // Detached probes get a fresh viewDidMoveToWindow when they return to
+        // a hierarchy; retrying while detached would spin the main queue at
+        // 100% CPU forever, so both the window guard and the retry budget are
+        // load-bearing.
+        guard window != nil else { return }
         guard let scrollView = enclosingScrollView else {
-            scheduleConfiguration()
+            guard retriesRemaining > 0 else { return }
+            retriesRemaining -= 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.configureScrollView()
+            }
             return
         }
 

@@ -4,10 +4,15 @@ import Testing
 
 @Suite("Telemetry")
 struct TelemetryTests {
-    @Test("Telemetry is opt-in and allowlisted")
-    func telemetryOptInAndAllowlist() async throws {
+    @Test("Telemetry defaults on, honors opt-out, and allowlists properties")
+    func telemetryDefaultAndAllowlist() async throws {
         LociTelemetry.clearLocalQueue()
         LociTelemetry.endpointString = ""
+
+        UserDefaults.standard.removeObject(forKey: LociTelemetry.enabledKey)
+        UserDefaults.standard.removeObject(forKey: "AtlasTelemetryEnabled")
+        #expect(LociTelemetry.isEnabled)
+
         LociTelemetry.isEnabled = false
 
         LociTelemetry.record(.importCompleted, properties: [

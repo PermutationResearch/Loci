@@ -10,6 +10,9 @@ struct ExtendDocumentViewer: View {
     var item: ReferenceItem
     var originalURL: URL?
     @Binding var pageIndex: Int
+    /// Set when viewing a standalone file that is not in the library yet;
+    /// surfaces an "Add to Library" action in the toolbar.
+    var onAddToLibrary: (() -> Void)?
 
     @State private var content: DocumentViewerContent = .unsupported("Loading…")
     @State private var pageCount = 0
@@ -156,6 +159,7 @@ struct ExtendDocumentViewer: View {
                             .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .menuStyle(.borderlessButton)
+                    .fixedSize()
                     viewerIconButton("plus") { adjustZoom(by: 10) }
                 }
             }
@@ -176,6 +180,17 @@ struct ExtendDocumentViewer: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+
+            if let onAddToLibrary {
+                Button("Add to Library", action: onAddToLibrary)
+                    .buttonStyle(.plain)
+                    .lociFont(size: 10, weight: .semibold, relativeTo: .caption2)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .help("Import a copy of this file into the Loci library")
             }
 
             if let websiteURL = item.websiteURL, isWebsitePreview {
@@ -202,6 +217,7 @@ struct ExtendDocumentViewer: View {
                         .foregroundStyle(.white.opacity(0.55))
                 }
                 .menuStyle(.borderlessButton)
+                .fixedSize()
             }
         }
         .padding(.horizontal, 14)
@@ -247,6 +263,8 @@ struct ExtendDocumentViewer: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .plainText(let text):
             ExtendTextCanvas(text: text)
+        case .markdown(let text):
+            ExtendMarkdownCanvas(text: text)
         case .websitePreview(let thumbnailURL, let websiteURL):
             ExtendWebsitePreviewCanvas(
                 item: item,
@@ -648,6 +666,183 @@ private struct ExtendTextCanvas: View {
                 .padding(20)
         }
         .background(Color(red: 0.07, green: 0.07, blue: 0.08))
+    }
+}
+
+/// Renders markdown as formatted text on the dark viewer canvas. Block
+/// structure (headings, lists, quotes, fences) is parsed by hand because
+/// AttributedString's markdown init flattens it; inline emphasis, code, and
+/// links go through AttributedString. Obsidian-style [[wikilinks]] display as
+/// their titles — there is no vault context to resolve them against here.
+private struct ExtendMarkdownCanvas: View {
+    private enum Block {
+        case heading(level: Int, text: AttributedString)
+        case paragraph(AttributedString)
+        case listItem(marker: String, text: AttributedString, indent: Int)
+        case quote(AttributedString)
+        case code(String)
+        case rule
+    }
+
+    private let blocks: [Block]
+
+    init(text: String) {
+        blocks = Self.parse(text)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                    blockView(block)
+                }
+            }
+            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .padding(24)
+        }
+        .textSelection(.enabled)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.08))
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: Block) -> some View {
+        switch block {
+        case .heading(let level, let text):
+            Text(text)
+                .lociFont(
+                    size: [20, 17, 14.5, 13, 12.5, 12][min(level, 6) - 1],
+                    weight: .semibold,
+                    relativeTo: .headline
+                )
+                .foregroundStyle(.white.opacity(0.94))
+                .padding(.top, level <= 2 ? 8 : 4)
+        case .paragraph(let text):
+            Text(text)
+                .lociFont(size: 12.5, relativeTo: .body)
+                .lineSpacing(3.5)
+                .foregroundStyle(.white.opacity(0.82))
+        case .listItem(let marker, let text, let indent):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(marker)
+                    .lociFont(size: 12, weight: .semibold, design: .rounded, relativeTo: .body)
+                    .foregroundStyle(.white.opacity(0.45))
+                Text(text)
+                    .lociFont(size: 12.5, relativeTo: .body)
+                    .lineSpacing(3)
+                    .foregroundStyle(.white.opacity(0.82))
+            }
+            .padding(.leading, CGFloat(indent) * 16)
+        case .quote(let text):
+            HStack(alignment: .top, spacing: 10) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color.white.opacity(0.26))
+                    .frame(width: 3)
+                Text(text)
+                    .lociFont(size: 12.5, relativeTo: .body)
+                    .italic()
+                    .lineSpacing(3)
+                    .foregroundStyle(.white.opacity(0.64))
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        case .code(let code):
+            Text(code)
+                .lociFont(size: 11, design: .monospaced, relativeTo: .caption)
+                .foregroundStyle(.white.opacity(0.80))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        case .rule:
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 1)
+                .padding(.vertical, 4)
+        }
+    }
+
+    private static func parse(_ raw: String) -> [Block] {
+        var blocks: [Block] = []
+        var paragraph: [String] = []
+        var fenceLines: [String]?
+        var lines = raw.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")[...]
+
+        // YAML frontmatter is metadata, not prose; show it as a code block.
+        if lines.first?.trimmingCharacters(in: .whitespaces) == "---",
+           let closing = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) {
+            blocks.append(.code(lines[lines.startIndex + 1..<closing].joined(separator: "\n")))
+            lines = lines[(closing + 1)...]
+        }
+
+        func flushParagraph() {
+            guard !paragraph.isEmpty else { return }
+            blocks.append(.paragraph(inline(paragraph.joined(separator: " "))))
+            paragraph.removeAll()
+        }
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if fenceLines != nil {
+                if trimmed.hasPrefix("```") {
+                    blocks.append(.code(fenceLines?.joined(separator: "\n") ?? ""))
+                    fenceLines = nil
+                } else {
+                    fenceLines?.append(line)
+                }
+                continue
+            }
+            if trimmed.hasPrefix("```") {
+                flushParagraph()
+                fenceLines = []
+                continue
+            }
+            if trimmed.isEmpty {
+                flushParagraph()
+                continue
+            }
+            if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+                flushParagraph()
+                blocks.append(.rule)
+                continue
+            }
+            let hashes = trimmed.prefix(while: { $0 == "#" }).count
+            if (1...6).contains(hashes), trimmed.dropFirst(hashes).first == " " {
+                flushParagraph()
+                let content = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+                blocks.append(.heading(level: hashes, text: inline(content)))
+                continue
+            }
+            if trimmed.hasPrefix(">") {
+                flushParagraph()
+                let content = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                blocks.append(.quote(inline(content)))
+                continue
+            }
+            let indent = line.prefix(while: { $0 == " " || $0 == "\t" }).reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("+ ") {
+                flushParagraph()
+                blocks.append(.listItem(marker: "•", text: inline(String(trimmed.dropFirst(2))), indent: indent))
+                continue
+            }
+            if let match = trimmed.firstMatch(of: /^(\d{1,3})\.\s+(.*)$/) {
+                flushParagraph()
+                blocks.append(.listItem(marker: "\(match.1).", text: inline(String(match.2)), indent: indent))
+                continue
+            }
+            paragraph.append(trimmed)
+        }
+        if let fenceLines {
+            blocks.append(.code(fenceLines.joined(separator: "\n")))
+        }
+        flushParagraph()
+        return blocks
+    }
+
+    private static func inline(_ text: String) -> AttributedString {
+        var normalized = text.replacing(/\[\[([^\]|]+)\|([^\]]+)\]\]/) { String($0.output.2) }
+        normalized = normalized.replacing(/\[\[([^\]]+)\]\]/) { String($0.output.1) }
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: normalized, options: options)) ?? AttributedString(normalized)
     }
 }
 
