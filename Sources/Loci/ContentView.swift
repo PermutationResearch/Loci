@@ -133,6 +133,19 @@ struct LociShell: View {
                     isShowingCommandPalette = true
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .lociToggleNotebookInspector)) { _ in
+                // ChatWorkspaceView owns this toggle while Ask Loci is open;
+                // from every other filter it has no listener, so enter the
+                // workspace the same way the sidebar row does.
+                guard store.selectedFilter != .chat else { return }
+                UserDefaults.standard.set(true, forKey: "LociNotebookInspectorVisible")
+                var transaction = Transaction()
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    store.selectedFilter = .chat
+                }
+            }
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
                     store.warmCommonReferenceFilters()
