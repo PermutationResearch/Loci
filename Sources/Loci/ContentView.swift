@@ -94,6 +94,7 @@ struct LociShell: View {
     @State private var warmedModes: [ViewMode] = []
     @State private var didStartDemoAutoplay = false
     @State private var demoAutoplayObserver: NSObjectProtocol?
+    @State private var isShowingCommandPalette = false
 
     var body: some View {
         ZStack {
@@ -138,6 +139,17 @@ struct LociShell: View {
                     .padding(.top, 22)
                     .padding(.trailing, 18)
             }
+
+            if isShowingCommandPalette {
+                Color.black.opacity(0.16)
+                    .ignoresSafeArea()
+                    .onTapGesture { isShowingCommandPalette = false }
+
+                CommandPaletteView(store: store, isPresented: $isShowingCommandPalette)
+                    .frame(width: 560)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(30)
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .animation(AppMotion.instant, value: store.mode)
@@ -167,6 +179,11 @@ struct LociShell: View {
             } else {
                 store.selectedItemIDs.removeAll()
                 store.searchText = ""
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lociShowCommandPalette)) { _ in
+            withAnimation(AppMotion.quick) {
+                isShowingCommandPalette = true
             }
         }
         .onAppear {
@@ -1546,6 +1563,9 @@ struct LociSidebar: View {
     private func selectFilter(_ filter: CollectionFilter) {
         if case .collection(let id) = filter {
             store.activeThreadID = id
+        }
+        if filter == .chat {
+            UserDefaults.standard.set(true, forKey: "LociNotebookInspectorVisible")
         }
         var transaction = Transaction()
         transaction.animation = nil

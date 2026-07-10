@@ -47,23 +47,26 @@ struct ChatWorkspaceView: View {
     @State private var browserSelectedID: ReferenceItem.ID?
     @State private var showShareSheet = false
     @AppStorage("LociOpenRouterModel") private var configuredModel = "openai/gpt-4o-mini"
+    @AppStorage("LociNotebookInspectorVisible") private var isInspectorVisible = true
 
     private let primaryText = LociColor.ink
     private let secondaryText = LociColor.inkTertiary
     private let panelBackground = LociColor.surfaceRecessed
 
     var body: some View {
-        HStack(spacing: 0) {
-            leftPanel
-                .frame(minWidth: 420, maxWidth: .infinity)
-                .layoutPriority(1)
+        Group {
+            if isInspectorVisible {
+                HSplitView {
+                    leftPanel
+                        .frame(minWidth: 360, maxWidth: .infinity)
+                        .layoutPriority(1)
 
-            Rectangle()
-                .fill(LociColor.hairline)
-                .frame(width: 1)
-
-            chatPanel
-                .frame(minWidth: 320, idealWidth: 360, maxWidth: 440)
+                    chatPanel
+                        .frame(minWidth: 300, idealWidth: 360, maxWidth: 520)
+                }
+            } else {
+                leftPanel
+            }
         }
         .background(LociColor.surface)
         .onAppear {
@@ -76,6 +79,11 @@ struct ChatWorkspaceView: View {
             if id != nil {
                 pane = .document
                 scope = .selected
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lociToggleNotebookInspector)) { _ in
+            withAnimation(AppMotion.quick) {
+                isInspectorVisible.toggle()
             }
         }
     }
@@ -303,6 +311,16 @@ struct ChatWorkspaceView: View {
 
             scopePicker
                 .padding(.horizontal, 16)
+
+            Button {
+                isInspectorVisible = false
+            } label: {
+                Label("Hide Ask Loci", systemImage: "sidebar.right")
+                    .font(LociFont.caption)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(secondaryText)
+            .padding(.horizontal, 16)
 
             activeSourceSummary
                 .padding(.horizontal, 16)

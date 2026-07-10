@@ -14,8 +14,13 @@ enum LociMain {
     }
 }
 
+extension Notification.Name {
+    static let lociShowCommandPalette = Notification.Name("LociShowCommandPalette")
+    static let lociToggleNotebookInspector = Notification.Name("LociToggleNotebookInspector")
+}
+
 @MainActor
-final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
     private var localAPI: LocalReferenceAPIServer?
@@ -56,6 +61,7 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentMinSize = NSSize(width: 980, height: 620)
         window.contentViewController = hostingController
         window.delegate = self
+        configureToolbar(for: window)
         window.center()
         window.makeKeyAndOrderFront(nil)
 
@@ -126,6 +132,19 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        let commandPaletteItem = NSMenuItem(title: "Command Palette", action: #selector(showCommandPalette), keyEquivalent: "k")
+        commandPaletteItem.keyEquivalentModifierMask = .command
+        commandPaletteItem.target = self
+        viewMenu.addItem(commandPaletteItem)
+        let inspectorItem = NSMenuItem(title: "Show or Hide Ask Loci", action: #selector(toggleNotebookInspector), keyEquivalent: "i")
+        inspectorItem.keyEquivalentModifierMask = [.command, .option]
+        inspectorItem.target = self
+        viewMenu.addItem(inspectorItem)
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
         let windowMenuItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
@@ -161,6 +180,66 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    @objc private func showCommandPalette(_ sender: Any? = nil) {
+        NotificationCenter.default.post(name: .lociShowCommandPalette, object: nil)
+    }
+
+    @objc private func toggleNotebookInspector(_ sender: Any? = nil) {
+        NotificationCenter.default.post(name: .lociToggleNotebookInspector, object: nil)
+    }
+
+    private func configureToolbar(for window: NSWindow) {
+        let toolbar = NSToolbar(identifier: "LociMainToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = true
+        toolbar.autosavesConfiguration = true
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, .space,
+         .lociCommandPalette, .lociNotebookInspector, .lociSettings]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.lociCommandPalette, .flexibleSpace, .lociNotebookInspector, .lociSettings]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.target = self
+
+        switch itemIdentifier {
+        case .lociCommandPalette:
+            item.label = "Command Palette"
+            item.paletteLabel = "Command Palette"
+            item.toolTip = "Command Palette (⌘K)"
+            item.image = NSImage(systemSymbolName: "command", accessibilityDescription: "Command Palette")
+            item.action = #selector(showCommandPalette)
+        case .lociNotebookInspector:
+            item.label = "Ask Loci"
+            item.paletteLabel = "Show or Hide Ask Loci"
+            item.toolTip = "Show or Hide Ask Loci (⌥⌘I)"
+            item.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: "Show or Hide Ask Loci")
+            item.action = #selector(toggleNotebookInspector)
+        case .lociSettings:
+            item.label = "Settings"
+            item.paletteLabel = "Settings"
+            item.toolTip = "Settings (⌘,)"
+            item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+            item.action = #selector(openSettings)
+        default:
+            return nil
+        }
+        return item
+    }
+
     @objc private func openSettings() {
         if let existing = settingsWindow {
             existing.makeKeyAndOrderFront(nil)
@@ -193,4 +272,10 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApp.applicationIconImage = icon
         }
     }
+}
+
+private extension NSToolbarItem.Identifier {
+    static let lociCommandPalette = NSToolbarItem.Identifier("LociCommandPalette")
+    static let lociNotebookInspector = NSToolbarItem.Identifier("LociNotebookInspector")
+    static let lociSettings = NSToolbarItem.Identifier("LociSettings")
 }
