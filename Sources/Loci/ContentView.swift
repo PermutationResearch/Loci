@@ -97,100 +97,112 @@ struct LociShell: View {
     @State private var isShowingCommandPalette = false
 
     var body: some View {
+        workspace
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .animation(AppMotion.instant, value: store.mode)
+            .animation(AppMotion.toast, value: store.selectedItemIDs)
+            .animation(AppMotion.hero, value: store.focusedItemID)
+            .focusable()
+            .onKeyPress(.leftArrow) {
+                guard store.focusedItemID != nil else { return .ignored }
+                withAnimation(AppMotion.smooth) {
+                    _ = store.focusAdjacentVisibleItem(offset: -1)
+                }
+                return .handled
+            }
+            .onKeyPress(.rightArrow) {
+                guard store.focusedItemID != nil else { return .ignored }
+                withAnimation(AppMotion.smooth) {
+                    _ = store.focusAdjacentVisibleItem(offset: 1)
+                }
+                return .handled
+            }
+            .onDeleteCommand {
+                store.sendSelectionToTrash(undoManager: undoManager)
+            }
+            .onExitCommand {
+                if store.focusedItemID != nil {
+                    store.requestFocusDismissal()
+                } else {
+                    store.selectedItemIDs.removeAll()
+                    store.searchText = ""
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .lociShowCommandPalette)) { _ in
+                withAnimation(AppMotion.quick) {
+                    isShowingCommandPalette = true
+                }
+            }
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                    store.warmCommonReferenceFilters()
+                }
+                startDemoAutoplayIfNeeded()
+            }
+    }
+
+    private var workspace: some View {
         ZStack {
             LociColor.surface
 
-            HStack(spacing: 0) {
-                LociSidebar(store: store)
-                    .frame(width: 164)
-
-                MainReferencePane(store: store, namespace: namespace)
-            }
-
-            if showsReferenceChrome {
-                LociTitle(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 22)
-            }
-
-            if showsReferenceChrome {
-                BottomModeBar(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 20)
-            }
-
-            if showsReferenceChrome {
-                UtilityCluster(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 18)
-                    .padding(.bottom, 21)
-            }
-
-            if showsReferenceChrome && !store.selectedItemIDs.isEmpty && store.selectedFilter != .trash {
-                BatchActionBar(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 60)
-                    .transition(AppMotion.bottomToastTransition)
-            }
-
-            if showsReferenceChrome && store.mode == .grid {
-                ZoomSlider(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 22)
-                    .padding(.trailing, 18)
-            }
-
-            if isShowingCommandPalette {
-                Color.black.opacity(0.16)
-                    .ignoresSafeArea()
-                    .onTapGesture { isShowingCommandPalette = false }
-
-                CommandPaletteView(store: store, isPresented: $isShowingCommandPalette)
-                    .frame(width: 560)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .zIndex(30)
-            }
+            libraryWorkspace
+            referenceChrome
+            commandPaletteOverlay
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .animation(AppMotion.instant, value: store.mode)
-        .animation(AppMotion.toast, value: store.selectedItemIDs)
-        .animation(AppMotion.hero, value: store.focusedItemID)
-        .focusable()
-        .onKeyPress(.leftArrow) {
-            guard store.focusedItemID != nil else { return .ignored }
-            withAnimation(AppMotion.smooth) {
-                _ = store.focusAdjacentVisibleItem(offset: -1)
-            }
-            return .handled
+    }
+
+    private var libraryWorkspace: some View {
+        HStack(spacing: 0) {
+            LociSidebar(store: store)
+                .frame(width: 164)
+
+            MainReferencePane(store: store, namespace: namespace)
         }
-        .onKeyPress(.rightArrow) {
-            guard store.focusedItemID != nil else { return .ignored }
-            withAnimation(AppMotion.smooth) {
-                _ = store.focusAdjacentVisibleItem(offset: 1)
-            }
-            return .handled
+    }
+
+    @ViewBuilder
+    private var referenceChrome: some View {
+        if showsReferenceChrome {
+            LociTitle(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 22)
+
+            BottomModeBar(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 20)
+
+            UtilityCluster(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 18)
+                .padding(.bottom, 21)
         }
-        .onDeleteCommand {
-            store.sendSelectionToTrash(undoManager: undoManager)
+
+        if showsReferenceChrome && !store.selectedItemIDs.isEmpty && store.selectedFilter != .trash {
+            BatchActionBar(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 60)
+                .transition(AppMotion.bottomToastTransition)
         }
-        .onExitCommand {
-            if store.focusedItemID != nil {
-                store.requestFocusDismissal()
-            } else {
-                store.selectedItemIDs.removeAll()
-                store.searchText = ""
-            }
+
+        if showsReferenceChrome && store.mode == .grid {
+            ZoomSlider(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 22)
+                .padding(.trailing, 18)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .lociShowCommandPalette)) { _ in
-            withAnimation(AppMotion.quick) {
-                isShowingCommandPalette = true
-            }
-        }
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
-                store.warmCommonReferenceFilters()
-            }
-            startDemoAutoplayIfNeeded()
+    }
+
+    @ViewBuilder
+    private var commandPaletteOverlay: some View {
+        if isShowingCommandPalette {
+            Color.black.opacity(0.16)
+                .ignoresSafeArea()
+                .onTapGesture { isShowingCommandPalette = false }
+
+            CommandPaletteView(store: store, isPresented: $isShowingCommandPalette)
+                .frame(width: 560)
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .zIndex(30)
         }
     }
 
@@ -2168,7 +2180,7 @@ struct ZoomSlider: View {
                         .animation(AppMotion.quick, value: isDragging)
                         .offset(x: knobOffset)
                 }
-                .frame(maxHeight: .infinity)
+                .frame(height: 20)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -2184,7 +2196,7 @@ struct ZoomSlider: View {
                         }
                     )
             }
-            .frame(width: 82)
+            .frame(width: 82, height: 20)
 
             Button {
                 stepZoom(by: 0.08)

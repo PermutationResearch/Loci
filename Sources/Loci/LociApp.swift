@@ -27,6 +27,10 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     private var libraryStore: LibraryStore?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Loci's palette is authored against light surfaces (see LociDesign);
+        // pin the appearance so the titlebar and toolbar can't fall out of
+        // step with the content when the system is in dark mode.
+        NSApp.appearance = NSAppearance(named: .aqua)
         LegacyAppMigration.run()
         LociEnvironment.reload()
         configureAppIcon()
@@ -214,30 +218,38 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     ) -> NSToolbarItem? {
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)
         item.target = self
+        item.isBordered = true
 
         switch itemIdentifier {
         case .lociCommandPalette:
             item.label = "Command Palette"
             item.paletteLabel = "Command Palette"
             item.toolTip = "Command Palette (⌘K)"
-            item.image = NSImage(systemSymbolName: "command", accessibilityDescription: "Command Palette")
+            item.image = Self.toolbarSymbol("command", description: "Command Palette")
             item.action = #selector(showCommandPalette)
         case .lociNotebookInspector:
             item.label = "Ask Loci"
             item.paletteLabel = "Show or Hide Ask Loci"
             item.toolTip = "Show or Hide Ask Loci (⌥⌘I)"
-            item.image = NSImage(systemSymbolName: "sidebar.right", accessibilityDescription: "Show or Hide Ask Loci")
+            item.image = Self.toolbarSymbol("sidebar.right", description: "Show or Hide Ask Loci")
             item.action = #selector(toggleNotebookInspector)
         case .lociSettings:
             item.label = "Settings"
             item.paletteLabel = "Settings"
             item.toolTip = "Settings (⌘,)"
-            item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+            item.image = Self.toolbarSymbol("gearshape", description: "Settings")
             item.action = #selector(openSettings)
         default:
             return nil
         }
         return item
+    }
+
+    /// Symbols sized for the unified-compact toolbar; without an explicit
+    /// configuration the raw template images render noticeably oversized.
+    private static func toolbarSymbol(_ name: String, description: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: description)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
     }
 
     @objc private func openSettings() {
