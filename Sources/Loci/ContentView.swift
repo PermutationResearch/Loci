@@ -1284,11 +1284,9 @@ struct LociSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Color.clear
-                .frame(width: 56, height: 50)
-
             Text("Library")
                 .sidebarSectionLabel()
+                .padding(.top, 14)
 
             SidebarGroup {
                 LociSidebarRow(
@@ -1760,7 +1758,7 @@ private extension View {
     func sidebarSectionLabel() -> some View {
         self
             .font(LociFont.label)
-            .foregroundStyle(LociColor.inkFaint)
+            .foregroundStyle(LociColor.inkSecondary)
             .padding(.bottom, 6)
             .padding(.leading, 20)
     }
