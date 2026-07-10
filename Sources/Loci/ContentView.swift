@@ -94,6 +94,7 @@ struct LociShell: View {
     @State private var warmedModes: [ViewMode] = []
     @State private var didStartDemoAutoplay = false
     @State private var demoAutoplayObserver: NSObjectProtocol?
+    @State private var isShowingCommandPalette = false
 
     var body: some View {
         ZStack {
@@ -138,6 +139,17 @@ struct LociShell: View {
                     .padding(.top, 22)
                     .padding(.trailing, 18)
             }
+
+            if isShowingCommandPalette {
+                Color.black.opacity(0.16)
+                    .ignoresSafeArea()
+                    .onTapGesture { isShowingCommandPalette = false }
+
+                CommandPaletteView(store: store, isPresented: $isShowingCommandPalette)
+                    .frame(width: 560)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(30)
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .animation(AppMotion.instant, value: store.mode)
@@ -167,6 +179,11 @@ struct LociShell: View {
             } else {
                 store.selectedItemIDs.removeAll()
                 store.searchText = ""
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .lociShowCommandPalette)) { _ in
+            withAnimation(AppMotion.quick) {
+                isShowingCommandPalette = true
             }
         }
         .onAppear {
@@ -350,13 +367,6 @@ struct MainReferencePane: View {
 
             if store.selectedFilter == .chat {
                 ChatWorkspaceView(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(LociColor.surface)
-                    .zIndex(12)
-            }
-
-            if store.selectedFilter == .timeline {
-                TimelineView(store: store)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(LociColor.surface)
                     .zIndex(12)
@@ -1197,7 +1207,7 @@ struct LociTitle: View {
         case .xBookmarks: "X BOOKMARKS"
         case .files: "FILES"
         case .trash: "TRASH"
-        case .chat: "NOTEBOOK"
+        case .chat: "ASK LOCI"
         case .api: "CREATIVE MEMORY"
         case .graph: "GRAPH"
         case .timeline: "TIMELINE"
@@ -1212,16 +1222,42 @@ struct LociTitle: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(title)
-                .font(LociFont.label)
-                .foregroundStyle(LociColor.inkSecondary)
-                .tracking(0.3)
-            Text("\(store.visibleItems.count.formatted()) ITEMS")
-                .font(LociFont.label)
-                .foregroundStyle(LociColor.inkFaint)
-                .tracking(0.2)
+            if let thread {
+                Text("CREATIVE THREAD")
+                    .font(LociFont.label)
+                    .foregroundStyle(LociColor.inkSecondary)
+                    .tracking(0.3)
+                Text(thread.name)
+                    .font(LociFont.headline)
+                    .foregroundStyle(LociColor.ink)
+                if !thread.brief.isEmpty {
+                    Text(thread.brief)
+                        .font(LociFont.caption)
+                        .foregroundStyle(LociColor.inkTertiary)
+                        .lineLimit(1)
+                        .frame(maxWidth: 360)
+                } else {
+                    Text("Add a brief from the Space menu")
+                        .font(LociFont.caption)
+                        .foregroundStyle(LociColor.inkFaint)
+                }
+            } else {
+                Text(title)
+                    .font(LociFont.label)
+                    .foregroundStyle(LociColor.inkSecondary)
+                    .tracking(0.3)
+                Text("\(store.visibleItems.count.formatted()) ITEMS")
+                    .font(LociFont.label)
+                    .foregroundStyle(LociColor.inkFaint)
+                    .tracking(0.2)
+            }
         }
         .allowsHitTesting(false)
+    }
+
+    private var thread: ReferenceCollection? {
+        guard case .collection(let id) = store.selectedFilter else { return nil }
+        return store.collections.first(where: { $0.id == id })
     }
 }
 
@@ -1230,7 +1266,9 @@ struct LociSidebar: View {
     @Environment(\.undoManager) private var undoManager
     @State private var collectionToRename: ReferenceCollection?
     @State private var renameDraft = ""
-    @AppStorage("LociStudioSidebarExpanded") private var isStudioExpanded = false
+    @State private var collectionToEditBrief: ReferenceCollection?
+    @State private var briefDraft = ""
+    @AppStorage("LociAdvancedSidebarExpanded") private var isStudioExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1260,38 +1298,6 @@ struct LociSidebar: View {
                 .onDrop(of: [.text], isTargeted: nil) { providers in
                     moveDroppedReferences(from: providers, to: nil)
                 }
-                LociSidebarRow(
-                    title: "X Bookmarks",
-                    symbol: "bookmark.square.fill",
-                    count: store.count(for: .xBookmarks).formatted(),
-                    isSelected: store.selectedFilter == .xBookmarks
-                ) {
-                    selectFilter(.xBookmarks)
-                }
-                LociSidebarRow(
-                    title: "Files",
-                    symbol: "folder.fill",
-                    count: store.count(for: .files).formatted(),
-                    isSelected: store.selectedFilter == .files
-                ) {
-                    selectFilter(.files)
-                }
-                LociSidebarRow(
-                    title: "Trash",
-                    symbol: "trash.fill",
-                    count: store.count(for: .trash).formatted(),
-                    isSelected: store.selectedFilter == .trash
-                ) {
-                    selectFilter(.trash)
-                }
-                .contextMenu {
-                    Button(role: .destructive) {
-                        store.emptyTrash()
-                    } label: {
-                        Label("Empty Trash", systemImage: "trash.slash")
-                    }
-                    .disabled(store.count(for: .trash) == 0)
-                }
             }
 
             Text("Spaces")
@@ -1319,6 +1325,12 @@ struct LociSidebar: View {
                         }
 
                         Button {
+                            beginEditingBrief(collection)
+                        } label: {
+                            Label("Edit Creative Brief", systemImage: "text.quote")
+                        }
+
+                        Button {
                             store.deleteCollection(id: collection.id, undoManager: undoManager)
                         } label: {
                             Label("Delete", systemImage: "trash")
@@ -1343,14 +1355,37 @@ struct LociSidebar: View {
                 }
             }
 
+            SidebarGroup {
+                LociSidebarRow(
+                    title: "Ask Loci",
+                    symbol: "sparkles",
+                    count: "",
+                    isSelected: store.selectedFilter == .chat
+                ) {
+                    selectFilter(.chat)
+                }
+
+                LociSidebarRow(
+                    title: "Rediscover",
+                    symbol: "clock.arrow.circlepath",
+                    count: reviewDueCount,
+                    isSelected: store.selectedFilter == .review,
+                    countStyle: .attention
+                ) {
+                    _ = ReviewScheduler.autoEnqueueForgottenReferences()
+                    selectFilter(.review)
+                }
+            }
+            .padding(.top, 12)
+
             Spacer()
 
-        Button {
-            store.addCollection(undoManager: undoManager)
-        } label: {
-            Label("New Space", systemImage: "plus")
-                .font(LociFont.caption)
-        }
+            Button {
+                store.addCollection(undoManager: undoManager)
+            } label: {
+                Label("New Creative Thread", systemImage: "plus")
+                    .font(LociFont.caption)
+            }
             .buttonStyle(.plain)
             .foregroundStyle(LociColor.ink)
             .padding(.leading, 18)
@@ -1382,32 +1417,21 @@ struct LociSidebar: View {
                 isActive: isStudioFilterSelected
             ) {
                 LociSidebarRow(
-                    title: "Review",
-                    symbol: "brain.head.profile",
-                    count: reviewDueCount,
-                    isSelected: store.selectedFilter == .review,
-                    countStyle: .attention
+                    title: "X Bookmarks",
+                    symbol: "bookmark.square.fill",
+                    count: store.count(for: .xBookmarks).formatted(),
+                    isSelected: store.selectedFilter == .xBookmarks
                 ) {
-                    _ = ReviewScheduler.autoEnqueueForgottenReferences()
-                    selectFilter(.review)
+                    selectFilter(.xBookmarks)
                 }
 
                 LociSidebarRow(
-                    title: "Timeline",
-                    symbol: "clock.fill",
-                    count: "",
-                    isSelected: store.selectedFilter == .timeline
+                    title: "Files",
+                    symbol: "folder.fill",
+                    count: store.count(for: .files).formatted(),
+                    isSelected: store.selectedFilter == .files
                 ) {
-                        selectFilter(.timeline)
-                }
-
-                LociSidebarRow(
-                    title: "Notebook",
-                    symbol: "text.bubble",
-                    count: store.count(for: .chat).formatted(),
-                    isSelected: store.selectedFilter == .chat
-                ) {
-                    selectFilter(.chat)
+                    selectFilter(.files)
                 }
 
                 LociSidebarRow(
@@ -1454,6 +1478,23 @@ struct LociSidebar: View {
                 ) {
                     selectFilter(.api)
                 }
+
+                LociSidebarRow(
+                    title: "Trash",
+                    symbol: "trash.fill",
+                    count: store.count(for: .trash).formatted(),
+                    isSelected: store.selectedFilter == .trash
+                ) {
+                    selectFilter(.trash)
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        store.emptyTrash()
+                    } label: {
+                        Label("Empty Trash", systemImage: "trash.slash")
+                    }
+                    .disabled(store.count(for: .trash) == 0)
+                }
             }
             .padding(.bottom, 18)
         }
@@ -1479,13 +1520,20 @@ struct LociSidebar: View {
         } message: {
             Text("Choose a new name for this collection.")
         }
+        .sheet(item: $collectionToEditBrief) { collection in
+            CreativeThreadBriefSheet(
+                threadName: collection.name,
+                brief: $briefDraft,
+                onSave: { store.updateCollectionBrief(id: collection.id, to: briefDraft) }
+            )
+        }
     }
 
     private var isStudioFilterSelected: Bool {
         switch store.selectedFilter {
-        case .chat, .api, .graph, .timeline, .review, .capabilities, .patterns, .rules:
+        case .api, .graph, .capabilities, .patterns, .rules, .xBookmarks, .files, .trash:
             true
-        case .all, .inbox, .xBookmarks, .files, .trash, .collection:
+        case .all, .inbox, .chat, .timeline, .review, .collection:
             false
         }
     }
@@ -1507,7 +1555,18 @@ struct LociSidebar: View {
         renameDraft = collection.name
     }
 
+    private func beginEditingBrief(_ collection: ReferenceCollection) {
+        briefDraft = collection.brief
+        collectionToEditBrief = collection
+    }
+
     private func selectFilter(_ filter: CollectionFilter) {
+        if case .collection(let id) = filter {
+            store.activeThreadID = id
+        }
+        if filter == .chat {
+            UserDefaults.standard.set(true, forKey: "LociNotebookInspectorVisible")
+        }
         var transaction = Transaction()
         transaction.animation = nil
         transaction.disablesAnimations = true
@@ -1574,10 +1633,10 @@ struct StudioSidebarSection<Content: View>: View {
                         .frame(width: 12)
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Studio")
+                        Text("Advanced")
                             .font(LociFont.label)
                             .foregroundStyle(LociColor.ink)
-                        Text("Review, graph, rules")
+                        Text("Sources, connections, automation")
                             .font(LociFont.caption)
                             .foregroundStyle(LociColor.inkFaint)
                     }

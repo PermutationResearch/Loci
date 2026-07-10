@@ -23,6 +23,8 @@ enum LociColor {
 
     /// Window and canvas surface.
     static var surface: Color { Color(nsColor: .windowBackgroundColor) }
+    /// Large working planes such as the Board and Explore modes.
+    static var canvas: Color { Color(nsColor: .textBackgroundColor) }
     /// Slightly recessed panels, rows, and wells.
     static var surfaceRecessed: Color { Color(nsColor: .controlBackgroundColor) }
     /// Hover/selected fills for list rows and tiles.
@@ -32,6 +34,9 @@ enum LociColor {
     static var hairline: Color { Color(nsColor: .separatorColor) }
     /// Stronger borders (focused fields, active cards).
     static var border: Color { Color(nsColor: .gridColor) }
+
+    /// Platform accent for the one place color should carry interaction meaning.
+    static var accent: Color { Color(nsColor: .controlAccentColor) }
 }
 
 /// Semantic type scale. The app renders dense, chrome-like UI, so sizes sit

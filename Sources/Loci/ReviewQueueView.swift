@@ -19,7 +19,7 @@ struct ReviewQueueView: View {
                 dueList
             }
         }
-        .background(Color.white)
+        .background(LociColor.surface)
         .task { refresh() }
     }
 
