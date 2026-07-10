@@ -75,7 +75,9 @@ private struct LociScaledFontModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.lociFont(size: scaledSize, weight: weight, design: design, relativeTo: .body)
+        // Do not call `lociFont` here: that would reapply this modifier and
+        // recurse through SwiftUI's view construction until launch crashes.
+        content.font(.system(size: scaledSize, weight: weight, design: design))
     }
 }
 
