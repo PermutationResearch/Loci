@@ -1,0 +1,25 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+script_dir="${0:A:h}"
+py_script="$script_dir/loci-extract.py"
+
+if [[ ! -f "$py_script" ]]; then
+  echo "loci-extract.py not found beside launcher" >&2
+  exit 2
+fi
+
+python_candidates=(
+  "${LOCI_PYTHON:-}"
+  "$(command -v python3 2>/dev/null || true)"
+  "/usr/bin/python3"
+)
+
+for python_bin in $python_candidates; do
+  if [[ -n "$python_bin" && -x "$python_bin" ]]; then
+    exec "$python_bin" "$py_script" "$@"
+  fi
+done
+
+echo "No usable python3 found for loci-extract" >&2
+exit 2

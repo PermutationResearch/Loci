@@ -1,0 +1,166 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  background: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 384px;
+  margin: 0;
+  color: rgba(0, 0, 0, 0.84);
+  background: rgb(246, 246, 244);
+}
+
+.panel {
+  padding: 12px;
+  background: rgb(250, 250, 248);
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 22px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.64)),
+    rgb(20, 20, 20);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+h1 {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+p {
+  margin: 2px 0 0;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(0, 0, 0, 0.44);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.iconButton,
+button {
+  border: 0;
+  border-radius: 999px;
+  color: rgba(0, 0, 0, 0.70);
+  background: transparent;
+  font: inherit;
+}
+
+.iconButton {
+  width: 28px;
+  height: 28px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 86px;
+  margin: 12px 0 10px;
+  padding: 11px 12px;
+  resize: vertical;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9px;
+  outline: none;
+  color: rgba(0, 0, 0, 0.86);
+  background: rgb(246, 244, 235);
+  font: 500 12px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+textarea::placeholder {
+  color: rgba(0, 0, 0, 0.38);
+}
+
+textarea:focus {
+  border-color: rgba(0, 0, 0, 0.18);
+  background: rgb(248, 246, 238);
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  color: rgba(0, 0, 0, 0.44);
+  font-size: 11px;
+  font-weight: 520;
+}
+
+.checkRow input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: rgb(28, 28, 28);
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(0, 0, 0, 0.42);
+  font-size: 10.5px;
+  font-weight: 520;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button {
+  height: 28px;
+  padding: 0 13px;
+  font-size: 11px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.primary {
+  color: white;
+  background: rgb(22, 22, 22);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.primary:hover {
+  background: rgb(0, 0, 0);
+}
+
+.primary:disabled {
+  cursor: default;
+  opacity: 0.45;
+}

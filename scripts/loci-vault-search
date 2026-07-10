@@ -1,0 +1,19 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+query="${1:-}"
+limit="${2:-20}"
+vault="${LOCI_VAULT:-$HOME/Library/Application Support/Loci Vault}"
+
+if [[ -z "$query" ]]; then
+  echo "usage: loci-vault-search <query> [limit]" >&2
+  exit 2
+fi
+
+if [[ ! -d "$vault" ]]; then
+  echo "Loci vault not found: $vault" >&2
+  exit 1
+fi
+
+rg -n -i --glob '*.md' --glob '*.txt' -- "$query" "$vault/wiki" "$vault/outputs" "$vault/system" 2>/dev/null \
+  | head -n "$limit"

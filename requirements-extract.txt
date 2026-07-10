@@ -1,0 +1,10 @@
+# Full document intelligence (recommended)
+docling>=2.0
+
+# Lightweight fallbacks used when Docling is unavailable
+pypdf>=4.0
+python-docx>=1.0
+python-pptx>=0.6
+openpyxl>=3.1
+pillow>=10.0
+pytesseract>=0.3

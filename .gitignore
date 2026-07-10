@@ -1,0 +1,59 @@
+# macOS
+.DS_Store
+*.swp
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+.package.resolved.tmp
+
+# Xcode
+DerivedData/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Local builds and release artifacts
+build/
+outputs/
+dist/
+*.app/
+*.dmg
+*.zip
+*.bak
+
+# Local config and secrets
+.env
+atlas.env
+*.env
+*.key
+*.p8
+*.mobileprovision
+
+# Runtime data
+tmp/
+work/
+external/
+*.atlaslibrary/
+ReferenceAtlas.sqlite
+events.jsonl
+
+# Local agent/tooling state
+.agents/
+.codex/
+.mimocode/
+skills-lock.json
+AGENTS.md
+Sources/Loci/.memoire/
+
+# Private working notes and generated audits
+docs/bugs/
+docs/LOCI_BRANDING_AND_MARKETING.md
+docs/GITHUB_PAGE.md
+
+# Python helpers
+__pycache__/
+*.pyc
+.venv/
+venv/

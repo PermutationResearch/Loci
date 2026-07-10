@@ -1,0 +1,31 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+input="${1:-}"
+vault="${LOCI_VAULT:-$HOME/Library/Application Support/Loci Vault}"
+out_dir="$vault/outputs/slides"
+
+if [[ -z "$input" ]]; then
+  echo "usage: loci-marp-render <deck.md>" >&2
+  exit 2
+fi
+
+if [[ ! -f "$input" ]]; then
+  echo "Deck not found: $input" >&2
+  exit 1
+fi
+
+mkdir -p "$out_dir"
+name="$(basename "$input" .md)"
+output="$out_dir/$name.pdf"
+
+if command -v marp >/dev/null 2>&1; then
+  marp "$input" --pdf --output "$output"
+elif command -v npx >/dev/null 2>&1; then
+  npx --yes @marp-team/marp-cli "$input" --pdf --output "$output"
+else
+  echo "Marp is not installed. Install @marp-team/marp-cli or put marp on PATH." >&2
+  exit 127
+fi
+
+echo "$output"

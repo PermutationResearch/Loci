@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Save to Loci</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="panel">
+      <header class="header">
+        <div class="mark"></div>
+        <div>
+          <h1>Save to Loci</h1>
+          <p id="pageTitle">Current page</p>
+        </div>
+        <button id="moreButton" class="iconButton" type="button" aria-label="More">...</button>
+      </header>
+
+      <textarea id="note" placeholder="Add a thought..."></textarea>
+
+      <label id="xBookmarkRow" class="checkRow" hidden>
+        <input id="bookmarkOnX" type="checkbox">
+        <span>Also bookmark on X</span>
+      </label>
+
+      <footer>
+        <span id="status">Quiet until you need it.</span>
+        <div class="actions">
+          <button id="cancelButton" type="button">Cancel</button>
+          <button id="saveButton" class="primary" type="button">Save</button>
+        </div>
+      </footer>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
