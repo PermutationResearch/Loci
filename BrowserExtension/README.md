@@ -2,7 +2,7 @@
 
 Save what sparks you. Loci will remember.
 
-The extension stays quiet in the browser until needed. It can save the current page, selected text, links, images, X posts, and a quick thought to the native Loci app through the local endpoint:
+The extension stays inactive until you open its popup or choose a **Save to Loci** context-menu action. It can then save the current page, selected text, links, images, X posts, and a quick thought to the native Loci app through the local endpoint:
 
 ```txt
 POST http://127.0.0.1:17641/references
@@ -23,6 +23,17 @@ POST http://127.0.0.1:17641/references
 - Optional note from the popup.
 - Context menu saves for pages, links, images, and selected text.
 - Optional best-effort X bookmark click when the checkbox is enabled.
+
+## Permissions And Privacy
+
+- **Active tab** — reads the page you explicitly save, not every page you visit.
+- **Context menus** — adds page, selection, image, and link capture actions.
+- **Scripting** — injects the extraction script only after an explicit save action.
+- **Storage** — keeps the local pairing token needed to reach Loci.
+- **Loopback host access** — sends captures only to Loci at `127.0.0.1:17641` or `localhost:17641`.
+- **X/Twitter host access** — enables optional X post and bookmark capture when you invoke it.
+
+The extension does not upload captures to a Loci-operated cloud service. External URLs and page content are sent only to the locally running Loci app; any later external processing is controlled by the app's configured integrations.
 
 ## Safari Path
 

@@ -51,6 +51,8 @@ Sources/Loci/.memoire/
 docs/bugs/
 docs/LOCI_BRANDING_AND_MARKETING.md
 docs/GITHUB_PAGE.md
+tools/openscreen-permission/
+screencording/
 
 # Python helpers
 __pycache__/

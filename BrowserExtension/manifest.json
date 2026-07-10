@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Loci Save",
-  "description": "Save pages, articles, X posts, notes, selections, and visual references to Loci with smart auto-tagging.",
+  "description": "Save the current page, selection, image, link, or X post to your local Loci library.",
   "version": "0.2.0",
   "action": {
     "default_title": "Save to Loci",
@@ -15,20 +15,12 @@
     "activeTab",
     "contextMenus",
     "scripting",
-    "storage",
-    "tabs"
+    "storage"
   ],
   "host_permissions": [
     "http://127.0.0.1:17641/*",
     "http://localhost:17641/*",
     "https://x.com/*",
     "https://twitter.com/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
   ]
 }
