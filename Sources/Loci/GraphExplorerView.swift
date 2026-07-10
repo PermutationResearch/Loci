@@ -23,7 +23,7 @@ struct GraphExplorerView: View {
         GeometryReader { proxy in
             let size = proxy.size
             ZStack {
-                Color.white
+                LociColor.canvas
 
                 Canvas { ctx, _ in
                     for edge in graph.edges {
@@ -290,7 +290,7 @@ struct GraphExplorerView: View {
                             .frame(width: 5.5, height: 5.5)
                         Text(shortLabel(for: group))
                             .lociFont(size: 8.5, weight: .semibold, relativeTo: .caption2)
-                            .foregroundStyle(Color.black.opacity(0.62))
+                            .foregroundStyle(LociColor.inkSecondary)
                             .lineLimit(1)
                     }
                 }
@@ -299,8 +299,8 @@ struct GraphExplorerView: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
         .frame(width: 102, height: 48, alignment: .center)
-        .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 0.5))
+        .background(LociColor.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(LociColor.hairline, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.045), radius: 7, y: 3)
     }
 
@@ -311,13 +311,13 @@ struct GraphExplorerView: View {
                 .frame(width: 6, height: 6)
             Text(edgeReasonText(for: edge.relation))
                 .lociFont(size: 9, weight: .semibold, relativeTo: .caption2)
-                .foregroundStyle(Color.black.opacity(0.66))
+                .foregroundStyle(LociColor.inkSecondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 9)
         .frame(height: 26)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 0.5))
+        .background(LociColor.surface.opacity(0.96), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(LociColor.hairline, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.10), radius: 12, y: 5)
         .help(edgeReasonText(for: edge.relation))
     }
@@ -331,7 +331,7 @@ struct GraphExplorerView: View {
             }
             Text("\(Int((zoom * 100).rounded()))%")
                 .lociFont(size: 8.5, weight: .bold, design: .rounded, relativeTo: .caption2)
-                .foregroundStyle(Color.black.opacity(0.56))
+                .foregroundStyle(LociColor.inkSecondary)
                 .frame(width: 28, height: 15)
             controlButton(systemName: "plus", help: "Zoom in") {
                 withAnimation(AppMotion.quick) {
@@ -339,7 +339,7 @@ struct GraphExplorerView: View {
                 }
             }
             Rectangle()
-                .fill(Color.black.opacity(0.08))
+                .fill(LociColor.hairline)
                 .frame(width: 18, height: 1)
                 .padding(.vertical, 1)
             controlButton(systemName: "arrow.up.left.and.arrow.down.right", help: "Rearrange graph") {
@@ -352,8 +352,8 @@ struct GraphExplorerView: View {
             }
         }
         .padding(4)
-        .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 0.5))
+        .background(LociColor.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(LociColor.hairline, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.045), radius: 7, y: 3)
     }
 
@@ -361,7 +361,7 @@ struct GraphExplorerView: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .lociFont(size: 11, weight: .bold, relativeTo: .caption)
-                .foregroundStyle(Color.black.opacity(0.62))
+                .foregroundStyle(LociColor.inkSecondary)
                 .frame(width: 23, height: 23)
                 .contentShape(Rectangle())
         }

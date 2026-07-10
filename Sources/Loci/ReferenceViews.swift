@@ -38,7 +38,7 @@ struct ReferenceGridView: View {
                 LazyVStack(spacing: 0) {
                     ForEach(gridBands(for: placements, contentHeight: contentHeight)) { band in
                         ZStack(alignment: .topLeading) {
-                            Color.white.opacity(0.001)
+                            LociColor.canvas.opacity(0.001)
                                 .contentShape(Rectangle())
                                 .frame(width: contentWidth, height: band.height)
                                 .onTapGesture {
@@ -55,7 +55,7 @@ struct ReferenceGridView: View {
                 .frame(width: contentWidth, height: contentHeight, alignment: .top)
             }
             .background {
-                Color.white
+                LociColor.canvas
                     .contentShape(Rectangle())
                     .onTapGesture {
                         dismissFocusedPreviewOrClearSelection()
@@ -81,7 +81,7 @@ struct ReferenceGridView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.white)
+        .background(LociColor.canvas)
         .animation(AppMotion.smooth, value: store.selectedFilter)
         .animation(AppMotion.smooth, value: store.activeSearchQuery)
         .gesture(
@@ -526,7 +526,7 @@ struct ReferenceCanvasView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color.white
+                LociColor.canvas
                     .contentShape(Rectangle())
                     .gesture(canvasSelectionGesture(in: proxy.size))
                     .onTapGesture {
@@ -855,7 +855,7 @@ struct ReferenceInfinityView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color.white
+                LociColor.canvas
 
                 InfinitySpaceBackground(zoom: store.zoom, pan: store.infinityPan)
                     .allowsHitTesting(false)
@@ -970,7 +970,7 @@ struct ReferenceInfinityView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.white)
+        .background(LociColor.canvas)
         .clipped()
         .onAppear {
             baseZoom = store.infinityZoom
@@ -1664,19 +1664,19 @@ struct ReferenceGridTile: View {
     var isSelected: Bool
     var clickRippleStrength: CGFloat = 0
     @State private var isHovering = false
-    private let selectionBlue = Color(red: 0.02, green: 0.45, blue: 0.98)
+    private let selectionBlue = LociColor.accent
 
     var body: some View {
         ReferenceThumbnail(item: item, xBookmarkPayload: xBookmarkPayload)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.96))
+                    .fill(LociColor.surface.opacity(0.96))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(
-                        isSelected ? selectionBlue : Color.black.opacity(isHovering ? 0.08 : 0.030),
+                        isSelected ? selectionBlue : LociColor.hairline.opacity(isHovering ? 0.85 : 0.45),
                         lineWidth: isSelected ? 2.2 : 0.6
                     )
             }
@@ -1685,7 +1685,7 @@ struct ReferenceGridTile: View {
                     Image(systemName: "checkmark.circle.fill")
                         .lociFont(size: 16, weight: .semibold, relativeTo: .headline)
                         .foregroundStyle(selectionBlue)
-                        .background(Color.white, in: Circle())
+                        .background(LociColor.surface, in: Circle())
                         .padding(7)
                         .transition(.scale(scale: 0.72).combined(with: .opacity))
                 }
@@ -1713,7 +1713,7 @@ struct ReferenceTile: View {
     let namespace: Namespace.ID
     var clickRippleStrength: CGFloat = 0
     @State private var isHovering = false
-    private let selectionBlue = Color(red: 0.02, green: 0.45, blue: 0.98)
+    private let selectionBlue = LociColor.accent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -1723,7 +1723,7 @@ struct ReferenceTile: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .strokeBorder(
-                            isSelected ? selectionBlue : Color.black.opacity(isHovering ? 0.13 : 0.045),
+                            isSelected ? selectionBlue : LociColor.hairline.opacity(isHovering ? 0.9 : 0.55),
                             lineWidth: isSelected ? 2.1 : 0.7
                         )
                 }
@@ -1732,7 +1732,7 @@ struct ReferenceTile: View {
                         Image(systemName: "checkmark.circle.fill")
                             .lociFont(size: 13, weight: .semibold, relativeTo: .subheadline)
                             .foregroundStyle(selectionBlue)
-                            .background(Color.white, in: Circle())
+                            .background(LociColor.surface, in: Circle())
                             .padding(4)
                             .transition(.scale(scale: 0.72).combined(with: .opacity))
                     }

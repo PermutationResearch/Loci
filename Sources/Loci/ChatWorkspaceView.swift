@@ -22,8 +22,9 @@ enum ChatRole: String, Hashable {
 }
 
 enum ChatSourceScope: String, CaseIterable, Identifiable {
-    case allDocuments = "All"
+    case allDocuments = "Library"
     case selected = "Selected"
+    case currentThread = "Thread"
 
     var id: String { rawValue }
 }
@@ -45,6 +46,7 @@ struct ChatWorkspaceView: View {
     @State private var sourceQuery = ""
     @State private var browserSelectedID: ReferenceItem.ID?
     @State private var showShareSheet = false
+    @AppStorage("LociOpenRouterModel") private var configuredModel = "openai/gpt-4o-mini"
 
     private let primaryText = LociColor.ink
     private let secondaryText = LociColor.inkTertiary
@@ -61,7 +63,7 @@ struct ChatWorkspaceView: View {
                 .frame(width: 1)
 
             chatPanel
-                .frame(width: 400)
+                .frame(minWidth: 320, idealWidth: 360, maxWidth: 440)
         }
         .background(LociColor.surface)
         .onAppear {
@@ -305,6 +307,9 @@ struct ChatWorkspaceView: View {
             activeSourceSummary
                 .padding(.horizontal, 16)
 
+            groundingBanner
+                .padding(.horizontal, 16)
+
             messageList
                 .padding(.horizontal, 12)
 
@@ -318,13 +323,15 @@ struct ChatWorkspaceView: View {
     private var chatScopeLabel: String {
         switch scope {
         case .allDocuments:
-            "Chat across all documents"
+            "Across your library"
         case .selected:
             if let item = activeViewerItem, scopedItems.count == 1 {
                 "Focused on \"\(item.title)\""
             } else {
                 "Chat across \(scopedItems.count) selected sources"
             }
+        case .currentThread:
+            "\(activeThread?.name ?? "Creative Thread") · \(scopedItems.count) sources"
         }
     }
 
@@ -354,7 +361,7 @@ struct ChatWorkspaceView: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .disabled(option == .selected && store.selectedItemIDs.isEmpty && store.notebookActiveItemID == nil)
+                .disabled(isScopeUnavailable(option))
             }
         }
         .padding(3)
@@ -381,6 +388,21 @@ struct ChatWorkspaceView: View {
             .padding(.vertical, 8)
             .background(LociColor.surfaceRecessed, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+    }
+
+    private var groundingBanner: some View {
+        HStack(alignment: .top, spacing: 7) {
+            Image(systemName: "lock.document")
+                .lociFont(size: 10, weight: .semibold, relativeTo: .caption2)
+                .foregroundStyle(LociColor.inkTertiary)
+            Text("Grounded in \(scopedItems.count) source\(scopedItems.count == 1 ? "" : "s") · \(configuredModel). Answers cite the files used.")
+                .font(LociFont.caption)
+                .foregroundStyle(LociColor.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(LociColor.surfaceRecessed, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var messageList: some View {
@@ -465,9 +487,10 @@ struct ChatWorkspaceView: View {
 
     private var suggestedPrompts: [String] {
         [
-            "Summarize the main points across these sources.",
-            "What themes or topics appear in these documents?",
-            "List key facts I should remember from these files."
+            "Find the visual themes across these sources.",
+            "What is missing from this creative direction?",
+            "Compare the strongest references and explain why they work.",
+            "Make a concise creative brief from these sources."
         ]
     }
 
@@ -519,6 +542,9 @@ struct ChatWorkspaceView: View {
                 ids = [notebookID]
             }
             return store.items.filter { ids.contains($0.id) && !$0.isTrashed }
+        case .currentThread:
+            guard let activeThread else { return [] }
+            return store.items.filter { $0.collectionID == activeThread.id && !$0.isTrashed }
         }
     }
 
@@ -540,6 +566,8 @@ struct ChatWorkspaceView: View {
     private func syncScopeFromSelection() {
         if store.notebookActiveItemID != nil || !store.selectedItemIDs.isEmpty {
             scope = .selected
+        } else if activeThread != nil {
+            scope = .currentThread
         }
     }
 
@@ -574,10 +602,16 @@ struct ChatWorkspaceView: View {
             .map { (role: $0.role == .user ? "user" : "assistant", content: $0.text) }
         let items = scopedItems
         let rootURL = store.vaultRootURL
+        let groundedQuestion: String
+        if scope == .currentThread, let thread = activeThread, !thread.brief.isEmpty {
+            groundedQuestion = "Creative thread: \(thread.name)\nBrief: \(thread.brief)\n\nQuestion: \(question)"
+        } else {
+            groundedQuestion = question
+        }
 
         Task {
             let result = await LLMWikiCompiler.answerNotebook(
-                question: question,
+                question: groundedQuestion,
                 items: items,
                 rootURL: rootURL,
                 history: history.dropLast().map { $0 }
@@ -603,6 +637,22 @@ struct ChatWorkspaceView: View {
                     )
                 }
             }
+        }
+    }
+
+    private var activeThread: ReferenceCollection? {
+        guard let id = store.activeThreadID else { return nil }
+        return store.collections.first(where: { $0.id == id })
+    }
+
+    private func isScopeUnavailable(_ option: ChatSourceScope) -> Bool {
+        switch option {
+        case .allDocuments:
+            false
+        case .selected:
+            store.selectedItemIDs.isEmpty && store.notebookActiveItemID == nil
+        case .currentThread:
+            activeThread == nil
         }
     }
 }

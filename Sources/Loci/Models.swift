@@ -5,9 +5,9 @@ import QuickLookThumbnailing
 import SwiftUI
 
 enum ViewMode: String, CaseIterable, Identifiable {
-    case grid = "Grid"
-    case canvas = "Canvas"
-    case infinity = "Infinity"
+    case grid = "Library"
+    case canvas = "Board"
+    case infinity = "Explore"
 
     var id: String { rawValue }
 
@@ -140,6 +140,8 @@ struct ReferenceCollection: Identifiable, Hashable {
     var name: String
     var symbol: String
     var tint: Color
+    /// The human intent that turns a collection of references into a creative thread.
+    var brief: String = ""
 }
 
 struct ReferenceItem: Identifiable, Hashable {
@@ -259,6 +261,8 @@ final class LibraryStore {
     var importJobResults: [ImportCoordinator.ImportJobResult] = []
     var isAPILibraryVisible = false
     var notebookActiveItemID: ReferenceItem.ID?
+    /// The last Space selected by the user; Ask Loci uses it as a Creative Thread scope.
+    var activeThreadID: ReferenceCollection.ID?
 
     var collections: [ReferenceCollection]
     var items: [ReferenceItem]
@@ -1658,8 +1662,8 @@ final class LibraryStore {
     func addCollection(undoManager: UndoManager? = nil) {
         let collection = ReferenceCollection(
             id: UUID(),
-            name: "Untitled \(collections.count + 1)",
-            symbol: "folder.fill",
+            name: "Untitled Thread \(collections.count + 1)",
+            symbol: "sparkles",
             tint: .gray
         )
         collections.append(collection)
@@ -1690,6 +1694,13 @@ final class LibraryStore {
             }
         }
         undoManager?.setActionName("Rename Collection")
+    }
+
+    func updateCollectionBrief(id: UUID, to brief: String) {
+        guard let index = collections.firstIndex(where: { $0.id == id }) else { return }
+        collections[index].brief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
+        persistence?.upsert(collection: collections[index])
+        rebuildVaultGraph()
     }
 
     func mergeCollection(id: UUID, direction: CollectionMergeDirection) {

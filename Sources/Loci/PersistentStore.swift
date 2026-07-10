@@ -452,15 +452,16 @@ final class LociPersistentStore {
         do {
             try queue.write { db in
                 try db.execute(sql: """
-                INSERT INTO collections (id, name, symbol, tint_hex, created_at, updated_at)
-                VALUES (?, ?, ?, ?, COALESCE((SELECT created_at FROM collections WHERE id = ?), ?), ?)
+                INSERT INTO collections (id, name, symbol, tint_hex, brief, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM collections WHERE id = ?), ?), ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     symbol = excluded.symbol,
                     tint_hex = excluded.tint_hex,
+                    brief = excluded.brief,
                     updated_at = excluded.updated_at,
                     deleted_at = NULL
-                """, arguments: [collection.id.uuidString, collection.name, collection.symbol, "system-gray", collection.id.uuidString, now, now])
+                """, arguments: [collection.id.uuidString, collection.name, collection.symbol, "system-gray", collection.brief, collection.id.uuidString, now, now])
             }
         } catch {
             print("GRDB upsert(collection:) failed: \(error)")
@@ -1065,19 +1066,35 @@ final class LociPersistentStore {
                 execute(statement)
             }
         }
+
+        if migrationVersion() < 4 {
+            let v4 = [
+                "ALTER TABLE collections ADD COLUMN brief TEXT NOT NULL DEFAULT ''",
+                "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (4, '\(timestamp())')"
+            ]
+            for statement in v4 {
+                execute(statement)
+            }
+        }
     }
 
     private func loadCollections() -> [ReferenceCollection] {
         guard let queue = grdbQueue else { return [] }
         do {
             return try queue.read { db in
-                try Row.fetchAll(db, sql: "SELECT id, name, symbol, tint_hex FROM collections WHERE deleted_at IS NULL ORDER BY created_at ASC").compactMap { row in
+                try Row.fetchAll(db, sql: "SELECT id, name, symbol, tint_hex, brief FROM collections WHERE deleted_at IS NULL ORDER BY created_at ASC").compactMap { row in
                     guard let idStr = row["id"] as String?,
                           let id = UUID(uuidString: idStr),
                           let name = row["name"] as String?,
                           let symbol = row["symbol"] as String? else { return nil }
                     let tintHex = row["tint_hex"] as String? ?? "system-gray"
-                    return ReferenceCollection(id: id, name: name, symbol: symbol, tint: colorFromHex(tintHex))
+                    return ReferenceCollection(
+                        id: id,
+                        name: name,
+                        symbol: symbol,
+                        tint: colorFromHex(tintHex),
+                        brief: row["brief"] as String? ?? ""
+                    )
                 }
             }
         } catch {

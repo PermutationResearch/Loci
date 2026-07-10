@@ -5,6 +5,22 @@ import Foundation
 @Suite("StartupLoading")
 struct StartupLoadingTests {
     @MainActor
+    @Test("Creative Thread brief stays attached to its Space")
+    func creativeThreadBriefStaysWithSpace() {
+        let thread = ReferenceCollection(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000201")!,
+            name: "Editorial identity",
+            symbol: "sparkles",
+            tint: .gray
+        )
+        let store = LibraryStore(collections: [thread], items: [], persistence: nil)
+
+        store.updateCollectionBrief(id: thread.id, to: "Find a warm, tactile direction for the rebrand.")
+
+        #expect(store.collections.first?.brief == "Find a warm, tactile direction for the rebrand.")
+    }
+
+    @MainActor
     @Test("Deferred vault bootstrap leaves references visible immediately")
     func testDeferredVaultBootstrapKeepsReferencesVisible() async {
         let item = ReferenceItem(
