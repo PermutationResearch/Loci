@@ -23,6 +23,9 @@ extension Notification.Name {
 final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
+    private var markdownWindows: [NSWindow] = []
+    /// Files handed to us before the main window finished launching.
+    private var pendingMarkdownURLs: [URL] = []
     private var localAPI: LocalReferenceAPIServer?
     private var libraryStore: LibraryStore?
 
@@ -74,6 +77,12 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak libraryStore] in
             libraryStore?.finishDeferredStartupWork()
         }
+
+        let queued = pendingMarkdownURLs
+        pendingMarkdownURLs.removeAll()
+        for url in queued {
+            openStandaloneMarkdown(url)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -81,16 +90,50 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == "loci" {
-            Task {
-                do {
-                    try await XOAuthManager.shared.completeAuthorization(from: url)
-                    openSettings()
-                } catch {
-                    ErrorPresenter.shared.show(.networkError("X sign-in failed: \(error.localizedDescription)"))
+        for url in urls {
+            if url.scheme == "loci" {
+                Task {
+                    do {
+                        try await XOAuthManager.shared.completeAuthorization(from: url)
+                        openSettings()
+                    } catch {
+                        ErrorPresenter.shared.show(.networkError("X sign-in failed: \(error.localizedDescription)"))
+                    }
+                }
+            } else if url.isFileURL, ["md", "markdown"].contains(url.pathExtension.lowercased()) {
+                if window == nil {
+                    pendingMarkdownURLs.append(url)
+                } else {
+                    openStandaloneMarkdown(url)
                 }
             }
         }
+    }
+
+    /// Opens a markdown file in its own viewer window, reading it in place —
+    /// no library import happens unless the user asks from the viewer.
+    private func openStandaloneMarkdown(_ url: URL) {
+        let viewer = StandaloneMarkdownViewer(fileURL: url, store: libraryStore)
+        let hostingController = NSHostingController(rootView: viewer)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 660),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = url.lastPathComponent
+        window.contentMinSize = NSSize(width: 480, height: 360)
+        window.contentViewController = hostingController
+        // NSHostingController shrinks the window to the SwiftUI ideal size
+        // (the frame minimums here); restore the intended reading size.
+        window.setContentSize(NSSize(width: 780, height: 660))
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        markdownWindows.removeAll { !$0.isVisible && !$0.isMiniaturized }
+        markdownWindows.append(window)
     }
 
     private func setupMenus() {
