@@ -159,6 +159,7 @@ struct ExtendDocumentViewer: View {
                             .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .menuStyle(.borderlessButton)
+                    .fixedSize()
                     viewerIconButton("plus") { adjustZoom(by: 10) }
                 }
             }
@@ -216,6 +217,7 @@ struct ExtendDocumentViewer: View {
                         .foregroundStyle(.white.opacity(0.55))
                 }
                 .menuStyle(.borderlessButton)
+                .fixedSize()
             }
         }
         .padding(.horizontal, 14)

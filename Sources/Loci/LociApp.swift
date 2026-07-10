@@ -122,6 +122,10 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
             defer: false
         )
         window.title = url.lastPathComponent
+        // The document viewer draws a dark canvas; give this window a dark
+        // titlebar (overriding the app-wide light pin) so the chrome matches.
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = NSColor(srgbRed: 0.07, green: 0.07, blue: 0.08, alpha: 1)
         window.contentMinSize = NSSize(width: 480, height: 360)
         window.contentViewController = hostingController
         // NSHostingController shrinks the window to the SwiftUI ideal size
