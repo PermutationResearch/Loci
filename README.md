@@ -42,6 +42,16 @@ Loci keeps references visible and connected instead of scattering them across br
 
 Optional integrations have their own requirements. See [Integrations](docs/INTEGRATIONS.md).
 
+## Install Loci
+
+Signed and notarized builds are published on the [GitHub Releases page](https://github.com/PermutationResearch/Loci/releases). Download the DMG, open it, and drag **Loci** to the **Applications** shortcut. Release assets include `SHA256SUMS.txt` so you can verify the download with:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+If the Releases page has no DMG yet, a public binary has not been published; use the source build below in the meantime.
+
 ## Quick Start
 
 ```sh

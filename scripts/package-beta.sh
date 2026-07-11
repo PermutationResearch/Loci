@@ -12,14 +12,23 @@ VERSION="${VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionStr
 BUILD="${BUILD:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${INFO_TEMPLATE}")}"
 DMG_PATH="${DIST_DIR}/${APP_NAME}-${VERSION}-b${BUILD}.dmg"
 ZIP_PATH="${DIST_DIR}/${APP_NAME}-${VERSION}-b${BUILD}.zip"
+CHECKSUM_PATH="${DIST_DIR}/SHA256SUMS.txt"
 FINAL_APP_DIR="${DIST_DIR}/${APP_NAME}.app"
 ALLOW_ADHOC="${ALLOW_ADHOC:-0}"
 KEEP_APP="${KEEP_APP:-0}"
 REQUIRE_NOTARIZATION="${REQUIRE_NOTARIZATION:-0}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+if [[ -z "${ARCHITECTURES:-}" ]]; then
+  if [[ "${ALLOW_ADHOC}" == "1" ]]; then
+    ARCHITECTURES="$(uname -m)"
+  else
+    ARCHITECTURES="arm64 x86_64"
+  fi
+fi
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/loci-package.XXXXXX")"
 APP_DIR="${WORK_DIR}/${APP_NAME}.app"
+DMG_STAGE_DIR="${WORK_DIR}/dmg"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
@@ -93,7 +102,7 @@ sign_dmg() {
   codesign --verify --verbose=2 "${DMG_PATH}"
 }
 
-notarize_if_requested() {
+validate_notarization_configuration() {
   if [[ -z "${NOTARY_PROFILE}" ]]; then
     if [[ "${REQUIRE_NOTARIZATION}" == "1" ]]; then
       cat >&2 <<'EOF'
@@ -110,8 +119,22 @@ EOF
       exit 3
     fi
     echo "NOTARY_PROFILE not set; skipping notarization."
-    return 0
   fi
+}
+
+notarize_app_if_requested() {
+  [[ -n "${NOTARY_PROFILE}" ]] || return 0
+
+  local submission_zip="${WORK_DIR}/${APP_NAME}-notarization.zip"
+  echo "Submitting ${APP_NAME}.app for notarization"
+  ditto -c -k --norsrc --keepParent "${APP_DIR}" "${submission_zip}"
+  xcrun notarytool submit "${submission_zip}" --keychain-profile "${NOTARY_PROFILE}" --wait
+  xcrun stapler staple "${APP_DIR}"
+  xcrun stapler validate "${APP_DIR}"
+}
+
+notarize_dmg_if_requested() {
+  [[ -n "${NOTARY_PROFILE}" ]] || return 0
 
   echo "Submitting ${DMG_PATH} for notarization"
   xcrun notarytool submit "${DMG_PATH}" --keychain-profile "${NOTARY_PROFILE}" --wait
@@ -120,16 +143,23 @@ EOF
 }
 
 echo "Packaging ${APP_NAME} ${VERSION} build ${BUILD}"
+validate_notarization_configuration
 
-rm -rf "${FINAL_APP_DIR}" "${DMG_PATH}" "${ZIP_PATH}"
+rm -rf "${FINAL_APP_DIR}" "${DMG_PATH}" "${ZIP_PATH}" "${CHECKSUM_PATH}"
 mkdir -p "${DIST_DIR}" "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-swift build -c "${CONFIGURATION}" --package-path "${ROOT_DIR}"
+BUILD_ARGS=(-c "${CONFIGURATION}" --package-path "${ROOT_DIR}")
+for architecture in ${ARCHITECTURES}; do
+  BUILD_ARGS+=(--arch "${architecture}")
+done
+swift build "${BUILD_ARGS[@]}"
+BUILD_BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 
-cp "${ROOT_DIR}/.build/${CONFIGURATION}/${EXECUTABLE_NAME}" "${MACOS_DIR}/${EXECUTABLE_NAME}"
+cp "${BUILD_BIN_DIR}/${EXECUTABLE_NAME}" "${MACOS_DIR}/${EXECUTABLE_NAME}"
 cp "${INFO_TEMPLATE}" "${INFO_PLIST}"
 cp "${APP_ICON_ICNS}" "${RESOURCES_DIR}/Loci.icns"
 cp "${ROOT_DIR}/Sources/Loci/Resources/AppIcon.png" "${RESOURCES_DIR}/AppIcon.png"
+ditto --norsrc "${ROOT_DIR}/Sources/Loci/Resources/scripts" "${RESOURCES_DIR}/scripts"
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${INFO_PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD}" "${INFO_PLIST}"
@@ -143,17 +173,25 @@ fi
 strip_xattrs "${APP_DIR}"
 SIGNING_IDENTITY="$(resolve_signing_identity)"
 sign_app "${SIGNING_IDENTITY}"
+notarize_app_if_requested
 
 (
   cd "${WORK_DIR}"
   ditto -c -k --norsrc --keepParent "${APP_NAME}.app" "${ZIP_PATH}"
 )
 
-hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_DIR}" -ov -format UDZO "${DMG_PATH}"
+mkdir -p "${DMG_STAGE_DIR}"
+ditto --norsrc "${APP_DIR}" "${DMG_STAGE_DIR}/${APP_NAME}.app"
+ln -s /Applications "${DMG_STAGE_DIR}/Applications"
+hdiutil create -volname "${APP_NAME}" -srcfolder "${DMG_STAGE_DIR}" -ov -format UDZO "${DMG_PATH}"
 sign_dmg "${SIGNING_IDENTITY}"
-notarize_if_requested
+notarize_dmg_if_requested
 
 strip_xattrs "${DMG_PATH}" "${ZIP_PATH}"
+(
+  cd "${DIST_DIR}"
+  shasum -a 256 "$(basename "${DMG_PATH}")" "$(basename "${ZIP_PATH}")" > "$(basename "${CHECKSUM_PATH}")"
+)
 
 if [[ "${KEEP_APP}" == "1" ]]; then
   ditto --norsrc "${APP_DIR}" "${FINAL_APP_DIR}"
@@ -171,3 +209,4 @@ fi
 
 echo "ZIP ${ZIP_PATH}"
 echo "DMG ${DMG_PATH}"
+echo "SHA256 ${CHECKSUM_PATH}"

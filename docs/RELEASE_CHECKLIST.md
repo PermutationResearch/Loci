@@ -5,6 +5,13 @@ Use this checklist before calling a build market-ready. A local ad-hoc DMG is us
 ## P0: Release Blockers
 
 - Install a valid Apple Developer ID Application certificate on the release Mac.
+- For GitHub releases, configure these Actions secrets:
+  - `DEVELOPER_ID_P12_BASE64`
+  - `DEVELOPER_ID_P12_PASSWORD`
+  - `APPLE_ID`
+  - `APPLE_APP_SPECIFIC_PASSWORD`
+  - `APPLE_TEAM_ID`
+  - `LOCI_X_CLIENT_ID` (optional)
 - Package without ad-hoc signing:
   `scripts/package-beta.sh`
 - Set the bundled X OAuth client ID for release builds:
@@ -16,6 +23,9 @@ Use this checklist before calling a build market-ready. A local ad-hoc DMG is us
 - Verify the DMG and ZIP:
   `hdiutil verify dist/Loci-0.1-b1.dmg`
   `unzip -t dist/Loci-0.1-b1.zip`
+  `(cd dist && shasum -a 256 -c SHA256SUMS.txt)`
+- Confirm the packaged executable contains both supported architectures:
+  `lipo -archs dist/Loci.app/Contents/MacOS/Loci`
 - Revoke and regenerate any X tokens that were pasted into chat, screenshots, logs, or local notes.
 - Confirm the committed license is still the intended license for the release.
 - Publish `docs/TELEMETRY_AND_PRIVACY.md` with the release.
@@ -65,3 +75,11 @@ Use this checklist before calling a build market-ready. A local ad-hoc DMG is us
 ## Ship Decision
 
 Loci is market-ready only when the signed/notarized package, X sync, large-library performance, first-run onboarding, and privacy/security checks all pass on a clean Mac.
+
+## Publish Through GitHub Actions
+
+1. Update `CFBundleShortVersionString` and increment `CFBundleVersion` in `Support/Loci.Info.plist`.
+2. Merge the version change to `main` and confirm CI passes.
+3. Create and push a matching tag, for example `v0.1` for version `0.1`.
+4. The `Release macOS app` workflow builds a universal app, signs and notarizes it, staples the app and DMG, verifies Gatekeeper acceptance, generates checksums, and publishes the GitHub Release.
+5. Download the release DMG on a different Mac and complete a clean install before announcing the release.
