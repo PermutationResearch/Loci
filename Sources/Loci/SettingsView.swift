@@ -44,7 +44,7 @@ struct SettingsView: View {
     @AppStorage("LociAutoCompile") private var autoCompile = false
     @AppStorage("LociVaultPath") private var vaultPath = ""
     @AppStorage("LociXRedirectMode") private var xRedirectModeRaw = XOAuthRedirectMode.recommended.rawValue
-    @AppStorage(LociTelemetry.enabledKey) private var telemetryEnabled = true
+    @AppStorage(LociTelemetry.enabledKey) private var telemetryEnabled = false
     @AppStorage(LociTelemetry.endpointKey) private var telemetryEndpoint = ""
 
     @StateObject private var xOAuth = XOAuthManager.shared

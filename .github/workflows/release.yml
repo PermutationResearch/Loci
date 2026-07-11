@@ -1,0 +1,99 @@
+name: Release macOS app
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Sign, notarize, and publish
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      LOCI_X_CLIENT_ID: ${{ secrets.LOCI_X_CLIENT_ID }}
+      NOTARY_PROFILE: loci-notary
+      REQUIRE_NOTARIZATION: "1"
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate release tag
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Loci.Info.plist)
+          test "${GITHUB_REF_NAME}" = "v${VERSION}"
+
+      - name: Import Developer ID certificate
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          : "${DEVELOPER_ID_P12_BASE64:?Configure the DEVELOPER_ID_P12_BASE64 Actions secret}"
+          : "${DEVELOPER_ID_P12_PASSWORD:?Configure the DEVELOPER_ID_P12_PASSWORD Actions secret}"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERTIFICATE_PATH="${RUNNER_TEMP}/developer-id.p12"
+          printf '%s' "${DEVELOPER_ID_P12_BASE64}" | /usr/bin/base64 -D > "${CERTIFICATE_PATH}"
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" release.keychain-db
+          security set-keychain-settings -lut 21600 release.keychain-db
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" release.keychain-db
+          security import "${CERTIFICATE_PATH}" -P "${DEVELOPER_ID_P12_PASSWORD}" -A -t cert -f pkcs12 -k release.keychain-db
+          security list-keychain -d user -s release.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" release.keychain-db
+
+      - name: Configure Apple notarization
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          : "${APPLE_ID:?Configure the APPLE_ID Actions secret}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Configure the APPLE_APP_SPECIFIC_PASSWORD Actions secret}"
+          : "${APPLE_TEAM_ID:?Configure the APPLE_TEAM_ID Actions secret}"
+          xcrun notarytool store-credentials "${NOTARY_PROFILE}" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_SPECIFIC_PASSWORD}"
+
+      - name: Build, sign, notarize, and package
+        run: scripts/package-beta.sh
+
+      - name: Verify distributable artifacts
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Loci.Info.plist)
+          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Support/Loci.Info.plist)
+          DMG="dist/Loci-${VERSION}-b${BUILD}.dmg"
+          ZIP="dist/Loci-${VERSION}-b${BUILD}.zip"
+          ditto -x -k "${ZIP}" "${RUNNER_TEMP}/loci-zip"
+          ARCHS=" $(lipo -archs "${RUNNER_TEMP}/loci-zip/Loci.app/Contents/MacOS/Loci") "
+          [[ "${ARCHS}" == *" arm64 "* ]]
+          [[ "${ARCHS}" == *" x86_64 "* ]]
+          codesign --verify --deep --strict --verbose=2 "${RUNNER_TEMP}/loci-zip/Loci.app"
+          xcrun stapler validate "${RUNNER_TEMP}/loci-zip/Loci.app"
+          spctl -a -vv -t exec "${RUNNER_TEMP}/loci-zip/Loci.app"
+          hdiutil verify "${DMG}"
+          codesign --verify --verbose=2 "${DMG}"
+          xcrun stapler validate "${DMG}"
+          spctl -a -vv -t open --context context:primary-signature "${DMG}"
+          unzip -t "${ZIP}"
+          (cd dist && shasum -a 256 -c SHA256SUMS.txt)
+
+      - name: Publish GitHub release
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Loci.Info.plist)
+          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Support/Loci.Info.plist)
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/Loci-${VERSION}-b${BUILD}.dmg" \
+            "dist/Loci-${VERSION}-b${BUILD}.zip" \
+            "dist/SHA256SUMS.txt" \
+            --verify-tag \
+            --generate-notes \
+            --title "Loci ${VERSION}"

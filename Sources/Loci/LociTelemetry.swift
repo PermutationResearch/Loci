@@ -66,7 +66,7 @@ enum LociTelemetry {
         "x_bookmark_count"
     ]
 
-    /// Enabled by default; users opt out from Settings → Privacy. An explicit
+    /// Disabled by default; users opt in from Settings → Privacy. An explicit
     /// choice under either the current or legacy key always wins.
     static var isEnabled: Bool {
         get {
@@ -76,7 +76,7 @@ enum LociTelemetry {
             if UserDefaults.standard.object(forKey: legacyEnabledKey) != nil {
                 return UserDefaults.standard.bool(forKey: legacyEnabledKey)
             }
-            return true
+            return false
         }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
     }
