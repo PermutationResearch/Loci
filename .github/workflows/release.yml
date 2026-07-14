@@ -77,12 +77,22 @@ jobs:
           [[ "${ARCHS}" == *" arm64 "* ]]
           [[ "${ARCHS}" == *" x86_64 "* ]]
           codesign --verify --deep --strict --verbose=2 "${RUNNER_TEMP}/loci-zip/Loci.app"
+          test -f "${RUNNER_TEMP}/loci-zip/Loci.app/Contents/Resources/SwiftPM/Loci_Loci.bundle/AppIcon.png"
+          test -f "${RUNNER_TEMP}/loci-zip/Loci.app/Contents/Resources/SwiftPM/GRDB_GRDB.bundle/PrivacyInfo.xcprivacy"
           xcrun stapler validate "${RUNNER_TEMP}/loci-zip/Loci.app"
           spctl -a -vv -t exec "${RUNNER_TEMP}/loci-zip/Loci.app"
           hdiutil verify "${DMG}"
           codesign --verify --verbose=2 "${DMG}"
           xcrun stapler validate "${DMG}"
           spctl -a -vv -t open --context context:primary-signature "${DMG}"
+          MOUNT_DIR="${RUNNER_TEMP}/loci-dmg"
+          mkdir -p "${MOUNT_DIR}"
+          hdiutil attach "${DMG}" -nobrowse -readonly -mountpoint "${MOUNT_DIR}"
+          test -d "${MOUNT_DIR}/Loci.app"
+          test -L "${MOUNT_DIR}/Applications"
+          test "$(readlink "${MOUNT_DIR}/Applications")" = "/Applications"
+          codesign --verify --deep --strict --verbose=2 "${MOUNT_DIR}/Loci.app"
+          hdiutil detach "${MOUNT_DIR}"
           unzip -t "${ZIP}"
           (cd dist && shasum -a 256 -c SHA256SUMS.txt)
 

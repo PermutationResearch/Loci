@@ -26,6 +26,10 @@ Use this checklist before calling a build market-ready. A local ad-hoc DMG is us
   `(cd dist && shasum -a 256 -c SHA256SUMS.txt)`
 - Confirm the packaged executable contains both supported architectures:
   `lipo -archs dist/Loci.app/Contents/MacOS/Loci`
+- Confirm packaged SwiftPM resources are present:
+  `test -f dist/Loci.app/Contents/Resources/SwiftPM/Loci_Loci.bundle/AppIcon.png`
+  `test -f dist/Loci.app/Contents/Resources/SwiftPM/GRDB_GRDB.bundle/PrivacyInfo.xcprivacy`
+- Mount the DMG and confirm it contains both `Loci.app` and an `Applications -> /Applications` shortcut.
 - Revoke and regenerate any X tokens that were pasted into chat, screenshots, logs, or local notes.
 - Confirm the committed license is still the intended license for the release.
 - Publish `docs/TELEMETRY_AND_PRIVACY.md` with the release.
