@@ -18,21 +18,28 @@ enum KeychainHelper {
         ]
     }
 
-    static func save(key: String, value: String) {
+    @discardableResult
+    static func save(key: String, value: String) -> Bool {
         let data = Data(value.utf8)
         let query = query(for: key)
         let attributes: [String: Any] = [
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data
         ]
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
             var addQuery = query
             addQuery.merge(attributes) { _, new in new }
-            SecItemAdd(addQuery as CFDictionary, nil)
+            status = SecItemAdd(addQuery as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            valueCache.removeValue(forKey: key)
+            missingKeys.remove(key)
+            return false
         }
         valueCache[key] = value
         missingKeys.remove(key)
+        return true
     }
 
     static func load(key: String, legacyKeys: [String] = []) -> String? {
@@ -78,21 +85,30 @@ enum KeychainHelper {
         load(key: key, legacyKeys: legacyKeys) != nil
     }
 
-    static func delete(key: String, legacyKeys: [String] = []) {
+    @discardableResult
+    static func delete(key: String, legacyKeys: [String] = []) -> Bool {
         let deleteQuery = query(for: key)
-        SecItemDelete(deleteQuery as CFDictionary)
+        let primaryStatus = SecItemDelete(deleteQuery as CFDictionary)
+        var succeeded = primaryStatus == errSecSuccess || primaryStatus == errSecItemNotFound
         for candidate in legacyCandidates(for: key, legacyKeys: legacyKeys) {
-            SecItemDelete(query(for: candidate.key, service: candidate.service) as CFDictionary)
+            let status = SecItemDelete(query(for: candidate.key, service: candidate.service) as CFDictionary)
+            succeeded = succeeded && (status == errSecSuccess || status == errSecItemNotFound)
         }
         valueCache.removeValue(forKey: key)
-        missingKeys.insert(key)
+        if succeeded {
+            missingKeys.insert(key)
+        } else {
+            missingKeys.remove(key)
+        }
+        return succeeded
     }
 
     static func migrateFromUserDefaults(key: String, userDefaultsKey: String) {
         if load(key: key) != nil { return }
         if let legacy = UserDefaults.standard.string(forKey: userDefaultsKey) {
-            save(key: key, value: legacy)
-            UserDefaults.standard.removeObject(forKey: userDefaultsKey)
+            if save(key: key, value: legacy) {
+                UserDefaults.standard.removeObject(forKey: userDefaultsKey)
+            }
         }
     }
 

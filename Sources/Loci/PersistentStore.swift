@@ -722,7 +722,7 @@ final class LociPersistentStore {
             return try queue.read { db in
                 guard let row = try Row.fetchOne(db, sql: """
                 SELECT id, source, status, payload, reference_id, error_message, created_at, updated_at
-                FROM import_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1
+                FROM import_jobs WHERE status = 'queued' ORDER BY created_at ASC, rowid ASC LIMIT 1
                 """) else { return nil }
                 guard let id = (row["id"] as String?).flatMap(UUID.init(uuidString:)),
                       let sourceStr = row["source"] as String?,
@@ -741,6 +741,25 @@ final class LociPersistentStore {
         } catch {
             print("GRDB nextQueuedJob failed: \(error)")
             return nil
+        }
+    }
+
+    func hasPendingImportJob(source: ImportSourceKind, referenceID: UUID) -> Bool {
+        guard let queue = grdbQueue else { return false }
+        do {
+            return try queue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: """
+                    SELECT COUNT(*) FROM import_jobs
+                    WHERE source = ? AND reference_id = ? AND status IN ('queued', 'running')
+                    """,
+                    arguments: [source.rawValue, referenceID.uuidString]
+                ) ?? 0
+            } > 0
+        } catch {
+            print("GRDB hasPendingImportJob failed: \(error)")
+            return false
         }
     }
 

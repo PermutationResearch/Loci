@@ -124,11 +124,11 @@ enum DocumentExtractor {
             return URL(fileURLWithPath: path)
         }
 
-        if let bundled = Bundle.main.url(forResource: "loci-extract", withExtension: "py", subdirectory: "scripts") {
-            return bundled
-        }
-
-        if let bundled = Bundle.module.url(forResource: "loci-extract", withExtension: "py", subdirectory: "scripts") {
+        if let bundled = LociResources.url(
+            forResource: "loci-extract",
+            withExtension: "py",
+            subdirectory: "scripts"
+        ) {
             return bundled
         }
 

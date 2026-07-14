@@ -32,9 +32,17 @@ DMG_STAGE_DIR="${WORK_DIR}/dmg"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
+SWIFTPM_RESOURCES_DIR="${RESOURCES_DIR}/SwiftPM"
 INFO_PLIST="${CONTENTS_DIR}/Info.plist"
+MOUNTED_DMG=""
 
-trap 'rm -rf "${WORK_DIR}"' EXIT
+cleanup() {
+  if [[ -n "${MOUNTED_DMG}" ]]; then
+    hdiutil detach "${MOUNTED_DMG}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${WORK_DIR}"
+}
+trap cleanup EXIT
 
 die() {
   echo "error: $*" >&2
@@ -148,18 +156,54 @@ validate_notarization_configuration
 rm -rf "${FINAL_APP_DIR}" "${DMG_PATH}" "${ZIP_PATH}" "${CHECKSUM_PATH}"
 mkdir -p "${DIST_DIR}" "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-BUILD_ARGS=(-c "${CONFIGURATION}" --package-path "${ROOT_DIR}")
+BUILD_BIN_DIRS=()
+BUILD_EXECUTABLES=()
 for architecture in ${ARCHITECTURES}; do
-  BUILD_ARGS+=(--arch "${architecture}")
+  ARCH_SCRATCH_DIR="${WORK_DIR}/build-${architecture}"
+  BUILD_ARGS=(
+    -c "${CONFIGURATION}"
+    --package-path "${ROOT_DIR}"
+    --scratch-path "${ARCH_SCRATCH_DIR}"
+    --arch "${architecture}"
+  )
+  echo "Building ${APP_NAME} for ${architecture}"
+  swift build "${BUILD_ARGS[@]}"
+  ARCH_BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+  BUILD_BIN_DIRS+=("${ARCH_BIN_DIR}")
+  BUILD_EXECUTABLES+=("${ARCH_BIN_DIR}/${EXECUTABLE_NAME}")
 done
-swift build "${BUILD_ARGS[@]}"
-BUILD_BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+BUILD_BIN_DIR="${BUILD_BIN_DIRS[0]}"
 
-cp "${BUILD_BIN_DIR}/${EXECUTABLE_NAME}" "${MACOS_DIR}/${EXECUTABLE_NAME}"
+if [[ "${#BUILD_EXECUTABLES[@]}" -eq 1 ]]; then
+  cp "${BUILD_EXECUTABLES[0]}" "${MACOS_DIR}/${EXECUTABLE_NAME}"
+else
+  lipo -create "${BUILD_EXECUTABLES[@]}" -output "${MACOS_DIR}/${EXECUTABLE_NAME}"
+fi
 cp "${INFO_TEMPLATE}" "${INFO_PLIST}"
 cp "${APP_ICON_ICNS}" "${RESOURCES_DIR}/Loci.icns"
 cp "${ROOT_DIR}/Sources/Loci/Resources/AppIcon.png" "${RESOURCES_DIR}/AppIcon.png"
 ditto --norsrc "${ROOT_DIR}/Sources/Loci/Resources/scripts" "${RESOURCES_DIR}/scripts"
+
+# SwiftPM resource accessors look for bundles beside command-line executables, which is not a
+# valid location inside a signed .app. Preserve every product/dependency bundle conventionally
+# under Contents/Resources and resolve Loci's own resources through LociResources at runtime.
+mkdir -p "${SWIFTPM_RESOURCES_DIR}"
+RESOURCE_BUNDLE_COUNT=0
+for bundle_path in "${BUILD_BIN_DIR}"/*.bundle; do
+  [[ -d "${bundle_path}" ]] || continue
+  bundle_name="$(basename "${bundle_path}")"
+  ditto --norsrc "${bundle_path}" "${SWIFTPM_RESOURCES_DIR}/${bundle_name}"
+  RESOURCE_BUNDLE_COUNT=$((RESOURCE_BUNDLE_COUNT + 1))
+done
+[[ "${RESOURCE_BUNDLE_COUNT}" -gt 0 ]] || die "SwiftPM produced no runtime resource bundles"
+rm -f "${SWIFTPM_RESOURCES_DIR}/Loci_Loci.bundle/AppIcon.png.bak"
+chmod -R u+rwX "${APP_DIR}"
+
+[[ -f "${SWIFTPM_RESOURCES_DIR}/Loci_Loci.bundle/AppIcon.png" ]] || die "Loci SwiftPM resources are missing"
+[[ -f "${SWIFTPM_RESOURCES_DIR}/GRDB_GRDB.bundle/PrivacyInfo.xcprivacy" ]] || die "GRDB privacy resources are missing"
+if strings "${MACOS_DIR}/${EXECUTABLE_NAME}" | grep -E '^/.*/Loci_Loci\.bundle$' >/dev/null; then
+  die "Release executable contains an absolute local SwiftPM resource fallback"
+fi
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${INFO_PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD}" "${INFO_PLIST}"
@@ -175,6 +219,11 @@ SIGNING_IDENTITY="$(resolve_signing_identity)"
 sign_app "${SIGNING_IDENTITY}"
 notarize_app_if_requested
 
+BUILT_ARCHS=" $(lipo -archs "${MACOS_DIR}/${EXECUTABLE_NAME}") "
+for architecture in ${ARCHITECTURES}; do
+  [[ "${BUILT_ARCHS}" == *" ${architecture} "* ]] || die "Packaged executable is missing ${architecture}"
+done
+
 (
   cd "${WORK_DIR}"
   ditto -c -k --norsrc --keepParent "${APP_NAME}.app" "${ZIP_PATH}"
@@ -186,6 +235,18 @@ ln -s /Applications "${DMG_STAGE_DIR}/Applications"
 hdiutil create -volname "${APP_NAME}" -srcfolder "${DMG_STAGE_DIR}" -ov -format UDZO "${DMG_PATH}"
 sign_dmg "${SIGNING_IDENTITY}"
 notarize_dmg_if_requested
+
+hdiutil verify "${DMG_PATH}"
+DMG_MOUNT_DIR="${WORK_DIR}/mounted-dmg"
+mkdir -p "${DMG_MOUNT_DIR}"
+hdiutil attach "${DMG_PATH}" -nobrowse -readonly -mountpoint "${DMG_MOUNT_DIR}" >/dev/null
+MOUNTED_DMG="${DMG_MOUNT_DIR}"
+[[ -d "${DMG_MOUNT_DIR}/${APP_NAME}.app" ]] || die "DMG does not contain ${APP_NAME}.app"
+[[ -L "${DMG_MOUNT_DIR}/Applications" ]] || die "DMG does not contain an Applications shortcut"
+[[ "$(readlink "${DMG_MOUNT_DIR}/Applications")" == "/Applications" ]] || die "DMG Applications shortcut has the wrong target"
+codesign --verify --deep --strict --verbose=2 "${DMG_MOUNT_DIR}/${APP_NAME}.app"
+hdiutil detach "${DMG_MOUNT_DIR}" >/dev/null
+MOUNTED_DMG=""
 
 strip_xattrs "${DMG_PATH}" "${ZIP_PATH}"
 (

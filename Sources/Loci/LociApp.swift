@@ -326,8 +326,7 @@ final class LociAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     }
 
     private func configureAppIcon() {
-        let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "png")
-            ?? Bundle.module.url(forResource: "AppIcon", withExtension: "png")
+        let iconURL = LociResources.url(forResource: "AppIcon", withExtension: "png")
         if let iconURL,
            let icon = NSImage(contentsOf: iconURL) {
             NSApp.applicationIconImage = icon
