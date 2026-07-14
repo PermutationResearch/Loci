@@ -10,15 +10,32 @@ struct WikiCompilerResult: Hashable {
 }
 
 enum WikiCompiler {
-    static func extract(item: ReferenceItem, source: ImportSourceKind, payload: String) async -> WikiCompilerResult {
-        MarkdownVault.writeRawSourcePackage(for: item, source: source, payload: payload)
-        let rootURL = MarkdownVault.defaultVaultURL()
+    static func extract(
+        item: ReferenceItem,
+        source: ImportSourceKind,
+        payload: String,
+        rootURL rootOverride: URL? = nil
+    ) async -> WikiCompilerResult {
+        let rootURL = rootOverride ?? MarkdownVault.defaultVaultURL()
+        MarkdownVault.writeRawSourcePackage(
+            for: item,
+            source: source,
+            payload: payload,
+            rootURL: rootURL
+        )
         let slug = MarkdownVault.slug(for: item)
         let rawURL = rootURL.appendingPathComponent("raw/\(slug)", isDirectory: true)
         createDirectoryIfNeeded(rawURL)
+        if source == .url || source == .browserExtension {
+            clearDerivedWebsiteArtifacts(in: rawURL, includesBrowserCapture: source == .browserExtension)
+        }
 
         let sourceText = await sourceText(for: item, source: source, payload: payload, rawURL: rawURL)
-        if readExtractedText(from: rawURL) == nil {
+        if source == .url || source == .browserExtension {
+            // Website extraction chooses a deliberate, ordered source. Persist that exact input
+            // so the later compile job cannot fall back to placeholder text or raw page HTML.
+            write(sourceText, to: rawURL.appendingPathComponent("extracted.md"))
+        } else if readExtractedText(from: rawURL) == nil {
             write(sourceText, to: rawURL.appendingPathComponent("extracted.txt"))
         }
         let imageCount = await downloadImages(from: imageURLs(from: payload), into: rawURL.appendingPathComponent("images", isDirectory: true))
@@ -123,20 +140,50 @@ enum WikiCompiler {
     private static func sourceText(for item: ReferenceItem, source: ImportSourceKind, payload: String, rawURL: URL) async -> String {
         if source == .browserExtension,
            let browserPayload = browserPayload(from: payload) {
-            let article = browserPayload.articleMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let transcript = browserPayload.transcriptText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawArticle = browserPayload.articleMarkdown
+            let article = rawArticle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawTranscript = browserPayload.transcriptText
+            let transcript = rawTranscript?.trimmingCharacters(in: .whitespacesAndNewlines)
             let selected = browserPayload.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let note = browserPayload.note?.trimmingCharacters(in: .whitespacesAndNewlines)
             let htmlText = browserPayload.pageHTML.map(cleanHTMLText)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let article, !article.isEmpty {
-                write(article, to: rawURL.appendingPathComponent("article.md"))
+            if let capturedHTML = browserPayload.pageHTML,
+               !capturedHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Preserve the browser's evidence even when its article Markdown is already
+                // strong enough that Loci does not need to render the capture a second time.
+                write(capturedHTML, to: rawURL.appendingPathComponent("captured-page.html"))
             }
-            if let transcript, !transcript.isEmpty {
-                write(transcript, to: rawURL.appendingPathComponent("transcript.txt"))
+            let articleIsSubstantial = article.map(isSubstantialWebsiteText) == true
+            let fetchedMarkdown: String?
+            if !articleIsSubstantial,
+               let urlString = browserPayload.url,
+               let url = URL(string: urlString) {
+                fetchedMarkdown = await websiteMarkdown(
+                    for: url,
+                    capturedHTML: browserPayload.pageHTML,
+                    rawURL: rawURL
+                )
+            } else {
+                fetchedMarkdown = nil
             }
-            return [article, transcript, browserPayload.note, selected, htmlText, browserPayload.url]
+            if let rawArticle, article?.isEmpty == false {
+                write(rawArticle, to: rawURL.appendingPathComponent("article.md"))
+            }
+            if let rawTranscript, transcript?.isEmpty == false {
+                write(rawTranscript, to: rawURL.appendingPathComponent("transcript.txt"))
+            }
+            let htmlFallback = (articleIsSubstantial || fetchedMarkdown != nil) ? nil : htmlText
+            let shortArticle = articleIsSubstantial ? nil : article
+            return [articleIsSubstantial ? article : fetchedMarkdown, shortArticle, transcript, note, selected, htmlFallback, browserPayload.url]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n\n---\n\n")
+        }
+
+        if source == .url,
+           let url = URL(string: payload),
+           let markdown = await websiteMarkdown(for: url, capturedHTML: nil, rawURL: rawURL) {
+            return markdown
         }
 
         if source == .file {
@@ -180,6 +227,105 @@ enum WikiCompiler {
         return [item.title, item.subtitle, payload]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n\n")
+    }
+
+    private static func websiteMarkdown(for url: URL, capturedHTML: String?, rawURL: URL) async -> String? {
+        let localExtraction: LocalWebsiteExtraction?
+        if let capturedHTML = capturedHTML?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !capturedHTML.isEmpty {
+            localExtraction = await LocalWebsiteExtractor.extract(html: capturedHTML, baseURL: url)
+        } else {
+            localExtraction = await LocalWebsiteExtractor.extract(url: url)
+        }
+
+        if let localExtraction {
+            write(localExtraction.markdown, to: rawURL.appendingPathComponent("local-extracted.md"))
+            if let metadata = try? JSONEncoder().encode(localExtraction.metadata) {
+                write(metadata, to: rawURL.appendingPathComponent("local-extraction-meta.json"))
+            }
+            if localExtraction.isUsable {
+                write(localExtraction.markdown, to: rawURL.appendingPathComponent("extracted.md"))
+                return localExtraction.markdown
+            }
+        } else {
+            let diagnostic = """
+            Local rendered website extraction failed at \(ISO8601DateFormatter().string(from: Date())).
+            Loci will try the configured remote fallback and then its basic source fallback.
+            """
+            write(diagnostic, to: rawURL.appendingPathComponent("local-extraction-error.txt"))
+        }
+
+        if let remoteMarkdown = await curlMarkdown(for: url, rawURL: rawURL) {
+            return remoteMarkdown
+        }
+
+        if let localExtraction, localExtraction.wordCount >= 15 {
+            write(localExtraction.markdown, to: rawURL.appendingPathComponent("extracted.md"))
+            return localExtraction.markdown
+        }
+        return nil
+    }
+
+    private static func isSubstantialWebsiteText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wordCount = trimmed.split { $0.isWhitespace || $0.isNewline }.count
+        return trimmed.count >= 280 && wordCount >= 50
+    }
+
+    private static func clearDerivedWebsiteArtifacts(in rawURL: URL, includesBrowserCapture: Bool) {
+        var names = [
+            "extracted.md",
+            "extracted.txt",
+            "extract-meta.json",
+            "local-extracted.md",
+            "local-extraction-meta.json",
+            "local-extraction-error.txt",
+            "curlmd-meta.json",
+            "curlmd-error.txt",
+            "images"
+        ]
+        if includesBrowserCapture {
+            names += ["captured-page.html", "article.md", "transcript.txt"]
+        }
+        for name in names {
+            try? FileManager.default.removeItem(at: rawURL.appendingPathComponent(name))
+        }
+    }
+
+    private static func curlMarkdown(for url: URL, rawURL: URL) async -> String? {
+        guard CurlMarkdownClient.isEnabled,
+              !CurlMarkdownClient.isPrivateTarget(url) else {
+            return nil
+        }
+        do {
+            let result = try await CurlMarkdownClient.fetchMarkdown(for: url)
+            write(result.markdown, to: rawURL.appendingPathComponent("extracted.md"))
+            if let metadata = try? JSONEncoder().encode(result.metadata) {
+                write(metadata, to: rawURL.appendingPathComponent("curlmd-meta.json"))
+            }
+            return result.markdown
+        } catch {
+            let diagnosticDetail: String
+            if let curlError = error as? CurlMarkdownError {
+                switch curlError {
+                case .http(let status, _):
+                    // Do not persist a server-controlled response message; a custom endpoint
+                    // could echo request headers or other sensitive material in its error body.
+                    diagnosticDetail = "HTTP \(status)"
+                default:
+                    diagnosticDetail = curlError.localizedDescription
+                }
+            } else {
+                diagnosticDetail = error.localizedDescription
+            }
+            let diagnostic = """
+            curl.md extraction failed at \(ISO8601DateFormatter().string(from: Date())).
+            Loci continued with its best available local source.
+            Error: \(diagnosticDetail)
+            """
+            write(diagnostic, to: rawURL.appendingPathComponent("curlmd-error.txt"))
+            return nil
+        }
     }
 
     private static func writeCompiledReference(
@@ -342,10 +488,25 @@ enum WikiCompiler {
     }
 
     private static func writeExtractReport(item: ReferenceItem, summary: String, imageCount: Int, contradictions: [String], rawURL: URL) {
-        let metaURL = rawURL.appendingPathComponent("extract-meta.json")
+        let localMetadata = try? decode(
+            LocalWebsiteExtractionMetadata.self,
+            from: rawURL.appendingPathComponent("local-extraction-meta.json")
+        )
+        let curlMetadata = try? decode(
+            CurlMarkdownClient.Metadata.self,
+            from: rawURL.appendingPathComponent("curlmd-meta.json")
+        )
         let metaSummary: String
-        if let data = try? Data(contentsOf: metaURL),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        if let curlMetadata {
+            let cache = curlMetadata.cache.map { ", cache: \($0)" } ?? ""
+            let tokens = curlMetadata.tokenCount.map { ", tokens: \($0)" } ?? ""
+            metaSummary = "Extractor: curl.md, fetched: \(curlMetadata.fetchedAt)\(cache)\(tokens)"
+        } else if let localMetadata {
+            metaSummary = "Extractor: loci-webkit, quality: \(format(localMetadata.qualityScore)), selected: \(localMetadata.selectedElement), words: \(localMetadata.wordCount)"
+        } else if FileManager.default.fileExists(atPath: rawURL.appendingPathComponent("article.md").path) {
+            metaSummary = "Extractor: browser article Markdown"
+        } else if let data = try? Data(contentsOf: rawURL.appendingPathComponent("extract-meta.json")),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             let extractor = object["extractor"] as? String ?? "unknown"
             let status = object["status"] as? String ?? "unknown"
             let wordCount = object["word_count"] as? Int ?? 0
@@ -365,6 +526,14 @@ enum WikiCompiler {
         - Tensions detected: \(contradictions.count)
         """
         write(content, to: rawURL.appendingPathComponent("extract-report.md"))
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, from url: URL) throws -> T {
+        try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
+    }
+
+    private static func format(_ value: Double) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private static func summarize(_ text: String, fallback: String) -> String {
@@ -424,31 +593,91 @@ enum WikiCompiler {
     private static func imageURLs(from payload: String) -> [URL] {
         guard let browserPayload = browserPayload(from: payload) else { return [] }
         let urls = (browserPayload.imageURLs ?? []) + [browserPayload.ogImageURL, browserPayload.faviconURL].compactMap { $0 }
-        return urls.compactMap(URL.init(string:))
+        let baseURL = browserPayload.url.flatMap { URL(string: $0) }
+        var seen = Set<String>()
+        return urls.compactMap { value in
+            URL(string: value, relativeTo: baseURL)?.absoluteURL
+        }
+        .filter { seen.insert($0.absoluteString).inserted }
     }
 
     private static func downloadImages(from urls: [URL], into directory: URL) async -> Int {
         guard !urls.isEmpty else { return 0 }
         createDirectoryIfNeeded(directory)
         let maxImageBytes: Int64 = 10 * 1_024 * 1_024
-        var count = 0
-        for url in urls.prefix(12) {
+        let candidates = Array(urls.prefix(12))
+        var downloadCount = 0
+        for batchStart in stride(from: 0, to: candidates.count, by: 4) {
+            let batchEnd = min(batchStart + 4, candidates.count)
+            let batch = candidates[batchStart..<batchEnd].enumerated()
+            let batchDownloads = await withTaskGroup(of: WebsiteImageDownload?.self) { group in
+                for (batchOffset, url) in batch {
+                    let sourceIndex = batchStart + batchOffset
+                    group.addTask {
+                        await downloadImage(from: url, sourceIndex: sourceIndex, maxImageBytes: maxImageBytes)
+                    }
+                }
+                var values: [WebsiteImageDownload] = []
+                for await value in group {
+                    if let value { values.append(value) }
+                }
+                return values
+            }
+            for download in batchDownloads.sorted(by: { $0.sourceIndex < $1.sourceIndex }) {
+                let ext = preferredImageExtension(url: download.url, mimeType: download.mimeType)
+                let baseName = download.url.deletingPathExtension().lastPathComponent.isEmpty
+                    ? download.url.host() ?? "image"
+                    : download.url.deletingPathExtension().lastPathComponent
+                let name = "\(slugify(baseName)).\(ext)"
+                write(download.data, to: uniqueURL(directory.appendingPathComponent(name)))
+                downloadCount += 1
+            }
+        }
+        return downloadCount
+    }
+
+    private struct WebsiteImageDownload: Sendable {
+        var sourceIndex: Int
+        var url: URL
+        var data: Data
+        var mimeType: String?
+    }
+
+    private static func downloadImage(
+        from url: URL,
+        sourceIndex: Int,
+        maxImageBytes: Int64
+    ) async -> WebsiteImageDownload? {
+            guard let scheme = url.scheme?.lowercased(),
+                  ["http", "https"].contains(scheme),
+                  url.host != nil,
+                  url.user == nil,
+                  url.password == nil else { return nil }
             var headRequest = URLRequest(url: url)
             headRequest.httpMethod = "HEAD"
             headRequest.timeoutInterval = 8
-            if let (_, headResponse) = try? await URLSession.shared.data(for: headRequest),
+            if let (_, headResponse) = try? await URLSession.shared.download(for: headRequest),
                let httpResponse = headResponse as? HTTPURLResponse,
                let contentLength = httpResponse.value(forHTTPHeaderField: "Content-Length"),
                let bytes = Int64(contentLength), bytes > maxImageBytes {
-                continue
+                return nil
             }
-            guard let (data, response) = try? await URLSession.shared.data(from: url), !data.isEmpty else { continue }
-            let ext = preferredImageExtension(url: url, mimeType: response.mimeType)
-            let name = "\(slugify(url.deletingPathExtension().lastPathComponent.isEmpty ? url.host() ?? "image" : url.deletingPathExtension().lastPathComponent)).\(ext)"
-            write(data, to: uniqueURL(directory.appendingPathComponent(name)))
-            count += 1
-        }
-        return count
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 15
+            guard let (downloadURL, response) = try? await URLSession.shared.download(for: request),
+                  let fileSize = (try? downloadURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                  fileSize > 0,
+                  Int64(fileSize) <= maxImageBytes,
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode),
+                  response.mimeType?.lowercased().hasPrefix("image/") == true,
+                  let data = try? Data(contentsOf: downloadURL, options: .mappedIfSafe) else { return nil }
+            return WebsiteImageDownload(
+                sourceIndex: sourceIndex,
+                url: url,
+                data: data,
+                mimeType: response.mimeType
+            )
     }
 
     private static func preferredImageExtension(url: URL, mimeType: String?) -> String {
@@ -473,7 +702,11 @@ enum WikiCompiler {
 
     private static func cleanHTMLText(_ html: String) -> String {
         html
-            .replacingOccurrences(of: #"<(script|style)[\s\S]*?</\1>"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(
+                of: #"<(script|style)[\s\S]*?</\1>"#,
+                with: " ",
+                options: [.regularExpression, .caseInsensitive]
+            )
             .replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")

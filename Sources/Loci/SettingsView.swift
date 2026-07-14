@@ -40,10 +40,11 @@ struct SettingsView: View {
     @AppStorage("LociOpenRouterAPIKey") private var openRouterKey = ""
     @AppStorage("LociOpenRouterModel") private var openRouterModel = "openai/gpt-4o-mini"
     @AppStorage("LociLLMCompileModel") private var ollamaModel = ""
-    @AppStorage("LociAutoExtract") private var autoExtract = true
-    @AppStorage("LociAutoCompile") private var autoCompile = false
+    @AppStorage(ImportAutomationSettings.autoExtractKey) private var autoExtract = true
+    @AppStorage(ImportAutomationSettings.autoCompileKey) private var autoCompile = false
     @AppStorage("LociVaultPath") private var vaultPath = ""
     @AppStorage("LociXRedirectMode") private var xRedirectModeRaw = XOAuthRedirectMode.recommended.rawValue
+    @AppStorage(CurlMarkdownClient.enabledKey) private var curlMarkdownEnabled = false
     @AppStorage(LociTelemetry.enabledKey) private var telemetryEnabled = false
     @AppStorage(LociTelemetry.endpointKey) private var telemetryEndpoint = ""
 
@@ -52,6 +53,10 @@ struct SettingsView: View {
     @State private var xAccessToken = ""
     @State private var xRefreshToken = ""
     @State private var showOpenRouterKey = false
+    @State private var curlMarkdownAPIKey = ""
+    @State private var storedCurlMarkdownAPIKey = ""
+    @State private var curlMarkdownKeyMessage = ""
+    @State private var curlMarkdownKeySaveFailed = false
     @State private var ollamaRunning = false
     @State private var xMessage = ""
     @State private var xMessageTone: SettingsNoticeTone = .info
@@ -154,6 +159,8 @@ struct SettingsView: View {
         .frame(width: 700, height: 620)
         .padding(.top, 8)
         .onAppear {
+            curlMarkdownAPIKey = CurlMarkdownClient.storedAPIKey
+            storedCurlMarkdownAPIKey = curlMarkdownAPIKey
             xClientID = xOAuth.clientID
             xOAuth.refreshStatus()
             clearStaleXMessage()
@@ -426,7 +433,59 @@ struct SettingsView: View {
             } header: {
                 Text("Pipeline")
             } footer: {
-                Text("Auto-extract runs document extraction on imports. Auto-compile generates wiki pages from extracted content.")
+                Text("Auto-extract processes new imports. Auto-compile also extracts when needed, then generates wiki pages from the result.")
+            }
+
+            Section {
+                Toggle("Use curl.md when local extraction is weak", isOn: $curlMarkdownEnabled)
+
+                HStack {
+                    Label("API key", systemImage: "key")
+                    Spacer()
+                    SecureField("Optional curlmd_…", text: $curlMarkdownAPIKey)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 250)
+                    Button("Save") {
+                        let value = curlMarkdownAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if CurlMarkdownClient.storeAPIKey(value) {
+                            curlMarkdownAPIKey = value
+                            storedCurlMarkdownAPIKey = value
+                            curlMarkdownKeyMessage = "API key saved in Keychain."
+                            curlMarkdownKeySaveFailed = false
+                        } else {
+                            curlMarkdownKeyMessage = "The API key could not be saved to Keychain."
+                            curlMarkdownKeySaveFailed = true
+                        }
+                    }
+                    .disabled(
+                        curlMarkdownAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                            == storedCurlMarkdownAPIKey
+                    )
+                    Button("Clear") {
+                        if CurlMarkdownClient.storeAPIKey("") {
+                            curlMarkdownAPIKey = ""
+                            storedCurlMarkdownAPIKey = ""
+                            curlMarkdownKeyMessage = "API key removed from Keychain."
+                            curlMarkdownKeySaveFailed = false
+                        } else {
+                            curlMarkdownKeyMessage = "The API key could not be removed from Keychain."
+                            curlMarkdownKeySaveFailed = true
+                        }
+                    }
+                    .disabled(storedCurlMarkdownAPIKey.isEmpty && curlMarkdownAPIKey.isEmpty)
+                }
+
+                if !curlMarkdownKeyMessage.isEmpty {
+                    Text(curlMarkdownKeyMessage)
+                        .font(.caption)
+                        .foregroundColor(curlMarkdownKeySaveFailed ? .red : .secondary)
+                }
+
+                Link("curl.md privacy policy", destination: URL(string: "https://curl.md/docs/privacy")!)
+            } header: {
+                Text("Website Markdown")
+            } footer: {
+                Text("When website extraction runs, Loci uses its local renderer first. With this fallback enabled, eligible URLs with weak local results are sent to curl.md. Local/private targets and URLs with credential-like parameters stay local. An API key is optional but raises service limits.")
             }
         }
         .formStyle(.grouped)

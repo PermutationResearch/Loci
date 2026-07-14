@@ -210,9 +210,10 @@ enum MarkdownVault {
         for item: ReferenceItem,
         source: ImportSourceKind,
         payload: String,
-        managedOriginalURL: URL? = nil
+        managedOriginalURL: URL? = nil,
+        rootURL rootOverride: URL? = nil
     ) {
-        let rootURL = defaultVaultURL()
+        let rootURL = rootOverride ?? defaultVaultURL()
         createVaultDirectories(at: rootURL)
         let slug = slug(for: item)
         let packageURL = rootURL.appendingPathComponent("raw/\(slug)", isDirectory: true)

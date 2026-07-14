@@ -4,6 +4,24 @@ import Observation
 import QuickLookThumbnailing
 import SwiftUI
 
+enum ImportAutomationSettings {
+    static let autoExtractKey = "LociAutoExtract"
+    static let autoCompileKey = "LociAutoCompile"
+
+    static var autoExtractEnabled: Bool {
+        if UserDefaults.standard.object(forKey: autoExtractKey) == nil { return true }
+        return UserDefaults.standard.bool(forKey: autoExtractKey)
+    }
+
+    static var autoCompileEnabled: Bool {
+        UserDefaults.standard.bool(forKey: autoCompileKey)
+    }
+
+    static var shouldRunExtractionOnImport: Bool {
+        autoExtractEnabled || autoCompileEnabled
+    }
+}
+
 enum ViewMode: String, CaseIterable, Identifiable {
     case grid = "Library"
     case canvas = "Board"
@@ -461,7 +479,15 @@ final class LibraryStore {
         var queued = 0
         for item in activeItems {
             let payload = recompilePayload(for: item)
-            persistence.enqueueImportJob(source: .extract, payload: payload, status: .queued, referenceID: item.id)
+            let extractionPending = persistence.hasPendingImportJob(source: .extract, referenceID: item.id)
+            let compilationPending = persistence.hasPendingImportJob(source: .wikiCompile, referenceID: item.id)
+            guard !compilationPending else { continue }
+            if !extractionPending {
+                persistence.enqueueImportJob(source: .extract, payload: payload, status: .queued, referenceID: item.id)
+            }
+            // This is an explicit recompile request, so it must compile even if the automatic
+            // setting changes while extraction is running.
+            persistence.enqueueImportJob(source: .wikiCompile, payload: payload, status: .queued, referenceID: item.id)
             queued += 1
         }
         refreshStorageDiagnostics()
@@ -1327,6 +1353,9 @@ final class LibraryStore {
         writeReferenceMarkdown(items[index])
         if source == .browserExtension, let persistence {
             persistence.enqueueImportJob(source: source, payload: payload, status: .queued, referenceID: id)
+            if ImportAutomationSettings.shouldRunExtractionOnImport {
+                persistence.enqueueImportJob(source: .extract, payload: payload, status: .queued, referenceID: id)
+            }
             Task { await ImportCoordinator.shared.enqueueProcess() }
         }
     }
@@ -1382,7 +1411,9 @@ final class LibraryStore {
         if let persistence {
             persistence.upsert(reference: item)
             persistence.enqueueImportJob(source: source, payload: payload, status: .queued, referenceID: item.id)
-            persistence.enqueueImportJob(source: .extract, payload: payload, status: .queued, referenceID: item.id)
+            if ImportAutomationSettings.shouldRunExtractionOnImport {
+                persistence.enqueueImportJob(source: .extract, payload: payload, status: .queued, referenceID: item.id)
+            }
         }
         refreshStorageDiagnostics()
         Task { await ImportCoordinator.shared.enqueueProcess() }
@@ -2212,7 +2243,10 @@ actor ImportCoordinator {
 
         await MainActor.run {
             persistence.updateImportJobStatus(id: job.id, status: .succeeded)
-            persistence.enqueueImportJob(source: .wikiCompile, payload: job.payload, status: .queued, referenceID: refID)
+            if ImportAutomationSettings.autoCompileEnabled,
+               !persistence.hasPendingImportJob(source: .wikiCompile, referenceID: refID) {
+                persistence.enqueueImportJob(source: .wikiCompile, payload: job.payload, status: .queued, referenceID: refID)
+            }
         }
         record(ImportJobResult(
             id: job.id,
@@ -2349,7 +2383,7 @@ actor ImportCoordinator {
         var headRequest = URLRequest(url: url)
         headRequest.httpMethod = "HEAD"
         headRequest.timeoutInterval = 3
-        if let (_, headResponse) = try? await URLSession.shared.data(for: headRequest),
+        if let (_, headResponse) = try? await URLSession.shared.download(for: headRequest),
            let httpResponse = headResponse as? HTTPURLResponse,
            let contentLength = httpResponse.value(forHTTPHeaderField: "Content-Length"),
            let bytes = Int64(contentLength), bytes > maxDownloadBytes {
@@ -2358,13 +2392,60 @@ actor ImportCoordinator {
             return
         }
 
-        guard let (data, response) = try? await URLSession.shared.data(from: url) else {
+        guard let (downloadURL, response) = try? await URLSession.shared.download(from: url) else {
             snapshotTask?.cancel()
             await MainActor.run { persistence.updateImportJobStatus(id: job.id, status: .failed, errorMessage: "Download failed") }
             return
         }
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200..<300).contains(httpResponse.statusCode) {
+            snapshotTask?.cancel()
+            await MainActor.run {
+                persistence.updateImportJobStatus(
+                    id: job.id,
+                    status: .failed,
+                    errorMessage: "Download returned HTTP \(httpResponse.statusCode)"
+                )
+            }
+            return
+        }
+        guard let downloadedSize = (try? downloadURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else {
+            snapshotTask?.cancel()
+            await MainActor.run { persistence.updateImportJobStatus(id: job.id, status: .failed, errorMessage: "Downloaded file size is unavailable") }
+            return
+        }
+        guard Int64(downloadedSize) <= maxDownloadBytes else {
+            snapshotTask?.cancel()
+            await MainActor.run {
+                persistence.updateImportJobStatus(
+                    id: job.id,
+                    status: .failed,
+                    errorMessage: "File too large (\(downloadedSize) bytes)"
+                )
+            }
+            return
+        }
+        guard let data = try? Data(contentsOf: downloadURL, options: .mappedIfSafe) else {
+            snapshotTask?.cancel()
+            await MainActor.run { persistence.updateImportJobStatus(id: job.id, status: .failed, errorMessage: "Downloaded file could not be read") }
+            return
+        }
 
-        let ext = url.pathExtension.isEmpty ? (response.mimeType == "text/html" ? "html" : "dat") : url.pathExtension
+        if let item = await MainActor.run(body: { persistence.loadReference(id: refID) }) {
+            let rawURL = MarkdownVault.defaultVaultURL()
+                .appendingPathComponent("raw/\(MarkdownVault.slug(for: item))", isDirectory: true)
+            let downloadedHTMLURL = rawURL.appendingPathComponent("downloaded-page.html")
+            if response.mimeType?.localizedCaseInsensitiveContains("html") == true {
+                try? FileManager.default.createDirectory(at: rawURL, withIntermediateDirectories: true)
+                try? data.write(to: downloadedHTMLURL, options: .atomic)
+            } else {
+                try? FileManager.default.removeItem(at: downloadedHTMLURL)
+            }
+        }
+
+        let ext = url.pathExtension.isEmpty
+            ? (response.mimeType?.localizedCaseInsensitiveContains("html") == true ? "html" : "dat")
+            : url.pathExtension
         let fileName = "\(UUID().uuidString.lowercased()).\(ext)"
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try? data.write(to: tempURL)

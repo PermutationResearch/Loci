@@ -213,6 +213,39 @@ The bundled extraction script lives in:
 Sources/Loci/Resources/scripts/
 ```
 
+## Website Markdown Extraction
+
+When automatic extraction is enabled (the default), Loci locally renders imported websites with WebKit, removes common navigation and page chrome, selects the strongest content region, and converts semantic elements to Markdown before compilation. You can also start extraction explicitly. Local extraction is always the primary extraction path.
+
+The raw package records:
+
+- `downloaded-page.html` or `captured-page.html` — original response or browser-captured HTML for audit and reprocessing.
+- `local-extracted.md` — the cleaned local candidate.
+- `local-extraction-meta.json` — selection, word count, link density, quality score, removed-element count, and warnings.
+- `extracted.md` — the source selected for downstream compilation.
+
+Loci can optionally use [curl.md](https://curl.md) when the local result is missing or below the quality threshold. Enable it under **Settings → Extraction → Website Markdown**, or configure:
+
+```txt
+LOCI_CURLMD_ENABLED=1
+CURLMD_API_KEY=
+```
+
+The API key is optional. Keys entered in Settings are stored in macOS Keychain; environment-provided keys remain in the developer's local environment. Authenticated requests receive higher service limits. `LOCI_CURLMD_BASE_URL` can point development builds at a self-hosted endpoint.
+
+Behavior and privacy boundaries:
+
+- Local WebKit is the primary extractor whenever website extraction runs, and it stays on the Mac.
+- The curl.md fallback is off by default.
+- Sends the imported URL to curl.md only after opt-in, only when the local result is weak, and only when it passes Loci's local privacy checks.
+- Saves returned content as `raw/<reference>/extracted.md` and response metadata as `curlmd-meta.json`.
+- Records a token-free `curlmd-error.txt` diagnostic when the service fails, then continues locally.
+- Never sends localhost, single-label or common private-use hostnames, `.local`, literal IPv6, loopback, link-local, or non-public literal IPv4 targets.
+- Never sends URLs containing common credential-like query parameters or token-bearing fragments.
+- Does not resolve arbitrary hostnames before fallback; a hostname whose DNS later points to a private address is not classified locally.
+- Falls back to Loci's existing local extraction when curl.md is unavailable or rejects a request.
+- curl.md may retain URLs and request metadata according to its [privacy policy](https://curl.md/docs/privacy).
+
 ## Telemetry
 
 Telemetry is off by default.

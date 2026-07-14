@@ -101,7 +101,13 @@ enum AutoRulesEngine {
         let rules = allRules().filter { $0.isEnabled }
         for rule in rules {
             guard shouldTrigger(rule: rule, fileExtension: fileExtension, sourceURL: sourceURL) else { continue }
-            executeAction(rule: rule, itemID: itemID)
+            executeAction(
+                rule: rule,
+                itemID: itemID,
+                source: nil,
+                payload: nil,
+                importPipelineAlreadyQueued: false
+            )
             incrementRunCount(ruleID: rule.id)
         }
     }
@@ -122,7 +128,13 @@ enum AutoRulesEngine {
                 matchesTrigger = true
             }
             guard matchesTrigger else { continue }
-            executeAction(rule: rule, itemID: itemID)
+            executeAction(
+                rule: rule,
+                itemID: itemID,
+                source: source,
+                payload: payload,
+                importPipelineAlreadyQueued: true
+            )
             incrementRunCount(ruleID: rule.id)
         }
     }
@@ -140,7 +152,13 @@ enum AutoRulesEngine {
         }
     }
 
-    private static func executeAction(rule: AutoRule, itemID: ReferenceItem.ID) {
+    private static func executeAction(
+        rule: AutoRule,
+        itemID: ReferenceItem.ID,
+        source: ImportSourceKind?,
+        payload: String?,
+        importPipelineAlreadyQueued: Bool
+    ) {
         switch rule.action {
         case .autoTag:
             let tagName = rule.name.replacingOccurrences(of: " ", with: "-").lowercased()
@@ -148,14 +166,62 @@ enum AutoRulesEngine {
         case .autoCollection:
             break
         case .autoExtract:
-            Task { @MainActor in
-                await ImportCoordinator.shared.enqueueProcess()
+            // Avoid duplicating work already queued by the import pipeline; direct rule
+            // evaluation still supplies an extraction job when no pipeline job exists.
+            if !importPipelineAlreadyQueued || !ImportAutomationSettings.shouldRunExtractionOnImport {
+                enqueuePipeline(itemID: itemID, source: source, payload: payload, compile: false)
             }
         case .autoCompile:
-            Task { @MainActor in
-                await ImportCoordinator.shared.enqueueProcess()
+            if !importPipelineAlreadyQueued || !ImportAutomationSettings.autoCompileEnabled {
+                enqueuePipeline(
+                    itemID: itemID,
+                    source: source,
+                    payload: payload,
+                    compile: true,
+                    extractionAlreadyQueued: importPipelineAlreadyQueued
+                        && ImportAutomationSettings.autoExtractEnabled
+                )
             }
         }
+    }
+
+    private static func enqueuePipeline(
+        itemID: ReferenceItem.ID,
+        source: ImportSourceKind?,
+        payload: String?,
+        compile: Bool,
+        extractionAlreadyQueued: Bool = false
+    ) {
+        guard let persistence = LociPersistentStore.shared,
+              let item = persistence.loadReference(id: itemID) else { return }
+        let resolvedPayload: String
+        if let payload {
+            resolvedPayload = payload
+        } else if source == .file || item.websiteURL == nil {
+            resolvedPayload = persistence.originalsURL.appendingPathComponent(item.fileName).path
+        } else {
+            resolvedPayload = item.websiteURL?.absoluteString ?? item.subtitle
+        }
+
+        if !extractionAlreadyQueued,
+           !persistence.hasPendingImportJob(source: .extract, referenceID: itemID) {
+            persistence.enqueueImportJob(
+                source: .extract,
+                payload: resolvedPayload,
+                status: .queued,
+                referenceID: itemID
+            )
+        }
+        if compile,
+           !persistence.hasPendingImportJob(source: .wikiCompile, referenceID: itemID) {
+            persistence.enqueueImportJob(
+                source: .wikiCompile,
+                payload: resolvedPayload,
+                status: .queued,
+                referenceID: itemID
+            )
+        }
+        Task { await ImportCoordinator.shared.enqueueProcess() }
     }
 
     private static func incrementRunCount(ruleID: UUID) {

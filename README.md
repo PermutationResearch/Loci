@@ -30,6 +30,7 @@ Loci keeps references visible and connected instead of scattering them across br
 - Search by text, dominant color, and visual similarity.
 - Preview images, websites, PDFs, Office documents, and text files.
 - Extract text with Vision OCR and optional document-processing helpers.
+- Turn rendered websites into clean local Markdown, with optional curl.md fallback for weak extractions.
 - Build and export an Obsidian-compatible Markdown vault.
 - Use local search without an LLM, or optionally connect OpenRouter or Ollama.
 - Keep telemetry off by default; when enabled, only allowlisted aggregate events are recorded.
@@ -79,6 +80,7 @@ Loci is local-first:
 - The local API binds to loopback by default and protects sensitive routes with a bearer token.
 - Telemetry is disabled by default and excludes file contents, URLs, bookmark text, prompts, model responses, tokens, and local paths.
 - LLM features are optional. Source text is sent only when you choose a configured external provider.
+- Local website extraction is enabled by default and can be disabled; the optional curl.md fallback sends an eligible website URL only after you enable it.
 
 Read the complete [Telemetry and Privacy](docs/TELEMETRY_AND_PRIVACY.md) and [Security](SECURITY.md) policies.
 
